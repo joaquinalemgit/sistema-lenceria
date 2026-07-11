@@ -74,7 +74,17 @@ def motor_extraccion_ia(texto_pdf, api_key):
         st.error(f"Error procesando con IA: {e}")
         return []
 
-st.title("🛍️ Sistema de Gestión - Lencería y Blanquería")
+# --- LOGO Y TÍTULO INTEGRADOS ---
+col1, col2 = st.columns([1, 4])
+with col1:
+    try:
+        st.image("logo.jpg", width=120)
+    except:
+        st.write("") # Por si falta la imagen
+with col2:
+    st.title("Sistema de Gestión")
+    st.subheader("Abril Lencería & Blanquería")
+# --------------------------------
 
 # Creamos las pestañas de navegación
 tab_pos, tab_catalogo, tab_ia, tab_excel, tab_caja = st.tabs([
