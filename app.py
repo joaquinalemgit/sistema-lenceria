@@ -211,11 +211,11 @@ with tab_excel:
             
             col_a, col_b, col_c = st.columns(3)
             with col_a:
-                col_codigo = st.selectbox("Columna de CÓDIGO", opciones=columnas_disp)
+                col_codigo = st.selectbox("Columna de CÓDIGO", options=columnas_disp)
             with col_b:
-                col_desc = st.selectbox("Columna de DESCRIPCIÓN", opciones=columnas_disp)
+                col_desc = st.selectbox("Columna de DESCRIPCIÓN", options=columnas_disp)
             with col_c:
-                col_costo = st.selectbox("Columna de COSTO (Precio)", opciones=columnas_disp)
+                col_costo = st.selectbox("Columna de COSTO (Precio)", options=columnas_disp)
                 
             nombre_proveedor = st.text_input("Nombre del Proveedor (Ej: Floyd):", value="Floyd")
             margen = st.number_input("Margen de Ganancia (%)", min_value=1, value=70)
