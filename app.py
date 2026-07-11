@@ -143,20 +143,21 @@ with tab_catalogo:
     conn.close()
     
     if not df_catalogo.empty:
+        # --- NUEVA LÓGICA DE LIMPIEZA ---
+        # Aseguramos que los precios sean números y los textos sean cadenas
+        df_catalogo['precio_costo'] = pd.to_numeric(df_catalogo['precio_costo'], errors='coerce').fillna(0)
+        df_catalogo['precio_venta'] = pd.to_numeric(df_catalogo['precio_venta'], errors='coerce').fillna(0)
+        df_catalogo['stock_actual'] = pd.to_numeric(df_catalogo['stock_actual'], errors='coerce').fillna(0).astype(int)
+        # --------------------------------
+        
         busqueda = st.text_input("🔍 Escribe para buscar por código o descripción...")
         if busqueda:
             df_catalogo = df_catalogo[
-                df_catalogo['descripcion'].str.contains(busqueda, case=False) | 
-                df_catalogo['codigo'].str.contains(busqueda, case=False)
+                df_catalogo['descripcion'].str.contains(busqueda, case=False, na=False) | 
+                df_catalogo['codigo'].str.contains(busqueda, case=False, na=False)
             ]
         
-        def color_stock(val):
-            color = '#ffcccc' if val <= 3 else ''
-            return f'background-color: {color}'
-            
-        st.dataframe(df_catalogo.style.map(color_stock, subset=['stock_actual']), use_container_width=True, hide_index=True)
-    else:
-        st.write("Catálogo vacío.")
+        st.dataframe(df_catalogo, use_container_width=True, hide_index=True)
 
 with tab_ia:
     st.header("Actualizar Precios con IA (PDFs Complejos)")
