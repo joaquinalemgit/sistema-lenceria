@@ -6,6 +6,17 @@ import json
 from pypdf import PdfReader
 from datetime import datetime
 
+# ... (después de todos los import)
+
+# --- CONFIGURACIÓN DE LOGO ---
+try:
+    st.sidebar.image("logo.jpg", use_container_width=True)
+except Exception as e:
+    st.sidebar.title("Abril Lencería")
+    st.sidebar.write("Comodidad y sensualidad a tu medida")
+
+# ... (sigue con tu código original)
+
 # Configuración inicial de la página
 st.set_page_config(page_title="Gestión Lencería", layout="wide")
 
