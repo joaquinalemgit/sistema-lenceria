@@ -115,7 +115,7 @@ with tab_pos:
             if prod_seleccionado != "-- Seleccionar --":
                 codigo_sel = prod_seleccionado.split(" - ")[0]
                 prod_data = df_prods[df_prods['codigo'] == codigo_sel].iloc[0]
-                # Agregamos con un ID único basado en el timestamp para evitar problemas al borrar
+                
                 st.session_state.carrito.append({
                     "id": datetime.now().timestamp(),
                     "codigo": prod_data['codigo'],
@@ -144,11 +144,27 @@ with tab_pos:
             total = sum(item['subtotal'] for item in st.session_state.carrito)
             st.markdown(f"### Total: **${total:,.2f}**")
             
+            # Selector de método de pago
+            metodo_pago = st.radio(
+                "Método de Pago",
+                ("Efectivo", "Mercado Pago", "Transferencia", "Debito/Credito"),
+                horizontal=True
+            )
+            
             c1, c2 = st.columns(2)
             if c1.button("✅ Confirmar Venta"):
-                st.success("Venta registrada exitosamente")
+                # Guardar en base de datos
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO ventas (fecha, metodo_pago, total) VALUES (?, ?, ?)", 
+                               (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), metodo_pago, total))
+                conn.commit()
+                conn.close()
+                
+                st.success(f"Venta registrada ({metodo_pago})")
                 st.session_state.carrito = []
                 st.rerun()
+                
             if c2.button("🗑️ Limpiar Venta"):
                 st.session_state.carrito = []
                 st.rerun()
