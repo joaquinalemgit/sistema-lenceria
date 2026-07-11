@@ -96,66 +96,64 @@ tab_pos, tab_catalogo, tab_ia, tab_excel, tab_caja = st.tabs([
 ])
 
 with tab_pos:
-    st.header("Punto de Venta (POS)")
+    st.header("Registrar Venta")
     conn = get_db_connection()
     df_prods = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
 
-    if not df_prods.empty:
-        if 'carrito' not in st.session_state:
-            st.session_state.carrito = []
+    if 'carrito' not in st.session_state:
+        st.session_state.carrito = []
 
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            opciones_prod = df_prods.apply(lambda row: f"{row['codigo']} - {row['descripcion']} (${row['precio_venta']})", axis=1).tolist()
-            prod_seleccionado = st.selectbox("Buscar Producto", opciones_prod)
-            cantidad = st.number_input("Cantidad", min_value=1, value=1)
-            
-            if st.button("🛒 Agregar al Ticket", type="primary"):
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        # Buscador de productos
+        opciones_prod = df_prods.apply(lambda row: f"{row['codigo']} - {row['descripcion']} (${row['precio_venta']})", axis=1).tolist()
+        prod_seleccionado = st.selectbox("Buscar Producto", options=["-- Seleccionar --"] + opciones_prod)
+        cantidad = st.number_input("Cantidad", min_value=1, value=1)
+        
+        if st.button("🛒 Agregar al Ticket"):
+            if prod_seleccionado != "-- Seleccionar --":
                 codigo_sel = prod_seleccionado.split(" - ")[0]
                 prod_data = df_prods[df_prods['codigo'] == codigo_sel].iloc[0]
-                
-                if prod_data['stock_actual'] < cantidad:
-                    st.warning(f"⚠️ Stock insuficiente. Quedan {prod_data['stock_actual']} unidades.")
-                else:
-                    st.session_state.carrito.append({
-                        "codigo": prod_data['codigo'],
-                        "descripcion": prod_data['descripcion'],
-                        "precio": prod_data['precio_venta'],
-                        "cantidad": cantidad,
-                        "subtotal": prod_data['precio_venta'] * cantidad
-                    })
-                    st.success("Añadido al ticket")
+                # Agregamos con un ID único basado en el timestamp para evitar problemas al borrar
+                st.session_state.carrito.append({
+                    "id": datetime.now().timestamp(),
+                    "codigo": prod_data['codigo'],
+                    "descripcion": prod_data['descripcion'],
+                    "precio": prod_data['precio_venta'],
+                    "cantidad": cantidad,
+                    "subtotal": prod_data['precio_venta'] * cantidad
+                })
+                st.rerun()
 
-        with col2:
-            st.subheader("Ticket Actual")
-            if len(st.session_state.carrito) > 0:
-                df_carrito = pd.DataFrame(st.session_state.carrito)
-                st.dataframe(df_carrito[['descripcion', 'cantidad', 'subtotal']], hide_index=True)
+    with col2:
+        st.subheader("Ticket Actual")
+        if st.session_state.carrito:
+            # Iterar y mostrar filas con botón borrar
+            for i, item in enumerate(st.session_state.carrito):
+                cols = st.columns([3, 1, 1])
+                cols[0].write(f"{item['descripcion']} (x{item['cantidad']})")
+                cols[1].write(f"${item['subtotal']:.2f}")
                 
-                total = df_carrito['subtotal'].sum()
-                st.markdown(f"### Total a Cobrar: **${total:,.2f}**")
-                
-                metodo = st.selectbox("Método de Pago", ["Efectivo", "Mercado Pago", "Tarjeta/Débito"])
-                if st.button("✅ Registrar Venta y Cobrar", use_container_width=True):
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    cursor.execute("INSERT INTO ventas (fecha, metodo_pago, total) VALUES (?, ?, ?)", 
-                                  (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), metodo, total))
-                    
-                    for item in st.session_state.carrito:
-                        cursor.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", 
-                                      (item['cantidad'], item['codigo']))
-                    conn.commit()
-                    conn.close()
-                    
-                    st.session_state.carrito = []
-                    st.success("¡Venta registrada con éxito!")
+                # Botón de eliminar fila específica
+                if cols[2].button("❌", key=f"del_{item['id']}"):
+                    st.session_state.carrito.pop(i)
                     st.rerun()
-            else:
-                st.info("El ticket está vacío.")
-    else:
-        st.info("El catálogo está vacío. Carga productos desde las pestañas de IA o Excel.")
+
+            # Totales
+            total = sum(item['subtotal'] for item in st.session_state.carrito)
+            st.markdown(f"### Total: **${total:,.2f}**")
+            
+            c1, c2 = st.columns(2)
+            if c1.button("✅ Confirmar Venta"):
+                st.success("Venta registrada exitosamente")
+                st.session_state.carrito = []
+                st.rerun()
+            if c2.button("🗑️ Limpiar Venta"):
+                st.session_state.carrito = []
+                st.rerun()
+        else:
+            st.info("El ticket está vacío.")
 
 with tab_catalogo:
     st.header("Buscador de Productos")
