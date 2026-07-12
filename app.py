@@ -28,7 +28,6 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # ORDEN ESTRICTO: (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
     cursor.execute('''CREATE TABLE IF NOT EXISTS productos 
                       (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, categoria TEXT, subcategoria TEXT, 
                        precio_costo REAL, precio_venta REAL, stock_actual INTEGER, unidades_paquete INTEGER)''')
@@ -49,148 +48,119 @@ with tab_pos:
 
     if 'carrito' not in st.session_state: st.session_state.carrito = []
 
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        marca_sel = st.selectbox("1. Filtrar por Marca", options=["-- Todas --"] + sorted([m for m in df_prods['marca'].unique() if pd.notna(m)]))
-        df_filtrado = df_prods[df_prods['marca'] == marca_sel] if marca_sel != "-- Todas --" else df_prods
-        opciones = df_filtrado.apply(lambda r: f"{r['codigo']} - {r['descripcion']} (Stock: {r['stock_actual']})", axis=1).tolist()
-        prod_sel = st.selectbox("2. Seleccionar Producto", options=["-- Seleccionar --"] + opciones)
-        cant = st.number_input("Cantidad", min_value=1, value=1)
+    # Filtros de búsqueda avanzados
+    col_fil1, col_fil2, col_fil3 = st.columns(3)
+    with col_fil1:
+        cat_sel = st.selectbox("Categoría", ["-- Todas --"] + sorted([c for c in df_prods['categoria'].unique() if pd.notna(c)]))
+    with col_fil2:
+        subcat_sel = st.selectbox("Subcategoría", ["-- Todas --"] + sorted([s for s in df_prods['subcategoria'].unique() if pd.notna(s)]))
+    with col_fil3:
+        df_f = df_prods
+        if cat_sel != "-- Todas --": df_f = df_f[df_f['categoria'] == cat_sel]
+        if subcat_sel != "-- Todas --": df_f = df_f[df_f['subcategoria'] == subcat_sel]
         
-        if st.button("🛒 Agregar al Carrito"):
-            if prod_sel != "-- Seleccionar --":
-                cod = prod_sel.split(" - ")[0]
-                prod = df_prods[df_prods['codigo'] == cod].iloc[0]
-                if cant <= prod['stock_actual']:
-                    st.session_state.carrito.append({"id_item": datetime.now().timestamp(), "codigo": cod, "desc": prod['descripcion'], "precio": prod['precio_venta'], "cant": cant})
-                    st.rerun()
-                else: st.error("Stock insuficiente")
+        opciones = df_f.apply(lambda r: f"{r['codigo']} - {r['descripcion']} (${r['precio_venta']})", axis=1).tolist()
+        prod_sel = st.selectbox("Seleccionar Producto", options=["-- Seleccionar --"] + opciones)
 
-    with col2:
-        st.subheader("Carrito de Venta")
-        total_base = 0
-        if st.session_state.carrito:
-            for i, item in enumerate(st.session_state.carrito):
-                cols = st.columns([3, 1, 1])
-                cols[0].write(f"{item['desc']} (x{item['cant']})")
-                cols[1].write(f"${item['precio']*item['cant']:.2f}")
-                if cols[2].button("❌", key=f"del_{item['id_item']}"):
-                    st.session_state.carrito.pop(i)
-                    st.rerun()
-                total_base += item['precio'] * item['cant']
-            
-            st.divider()
-            desc = st.number_input("Descuento (%)", min_value=0, max_value=100, value=0)
-            nota = st.text_input("📝 Nota para el ticket")
-            total_final = total_base * (1 - desc/100)
-            st.markdown(f"### Total: **${total_final:,.2f}**")
-            metodo = st.radio("Método de Pago", ("Efectivo", "Mercado Pago", "Transferencia", "Debito/Credito"), horizontal=True)
-            
-            if st.button("✅ Confirmar Venta"):
-                pdf = FPDF()
-                pdf.add_page()
-                if os.path.exists("logo.jpg"): pdf.image("logo.jpg", 80, 10, 50)
-                pdf.ln(40)
-                pdf.set_font("Arial", 'B', 16)
-                pdf.cell(200, 10, "Ticket de Venta", ln=True, align='C')
-                pdf.set_font("Arial", size=12)
-                for item in st.session_state.carrito:
-                    pdf.cell(200, 8, f"{item['desc']} x{item['cant']} : ${item['precio']*item['cant']:.2f}", ln=True)
-                pdf.cell(200, 10, f"Total Final: ${total_final:.2f}", ln=True)
-                if nota:
-                    pdf.set_font("Arial", 'I', 10)
-                    pdf.cell(200, 10, f"Nota: {nota}", ln=True)
-                pdf.output("ticket.pdf")
-                
-                conn = get_db_connection()
-                c = conn.cursor()
-                for item in st.session_state.carrito:
-                    c.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", (item['cant'], item['codigo']))
-                c.execute("INSERT INTO ventas (fecha, metodo_pago, total, nota) VALUES (?, ?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), metodo, total_final, nota))
-                conn.commit()
-                conn.close()
-                st.session_state.carrito = []
-                st.success("Venta registrada")
-                with open("ticket.pdf", "rb") as f: st.download_button("📥 Descargar Ticket", f, "ticket.pdf")
+    cant = st.number_input("Cantidad", min_value=1, value=1)
+    
+    if st.button("🛒 Agregar al Carrito"):
+        if prod_sel != "-- Seleccionar --":
+            cod = prod_sel.split(" - ")[0]
+            prod = df_prods[df_prods['codigo'] == cod].iloc[0]
+            if cant <= prod['stock_actual']:
+                st.session_state.carrito.append({"id_item": datetime.now().timestamp(), "codigo": cod, "desc": prod['descripcion'], "precio": prod['precio_venta'], "cant": cant})
                 st.rerun()
+            else: st.error("Stock insuficiente")
+
+    st.subheader("Carrito de Venta")
+    if st.session_state.carrito:
+        for i, item in enumerate(st.session_state.carrito):
+            cols = st.columns([3, 1, 1, 1])
+            cols[0].write(f"{item['desc']}")
+            cols[1].write(f"Unit: ${item['precio']:.2f}")
+            cols[2].write(f"Cant: {item['cant']}")
+            if cols[3].button("❌", key=f"del_{item['id_item']}"):
+                st.session_state.carrito.pop(i)
+                st.rerun()
+        
+        total_base = sum(item['precio'] * item['cant'] for item in st.session_state.carrito)
+        desc = st.number_input("Descuento (%)", min_value=0, max_value=100, value=0)
+        total_final = total_base * (1 - desc/100)
+        st.markdown(f"### Total Final: **${total_final:,.2f}**")
+        
+        if st.button("✅ Confirmar y Generar PDF"):
+            pdf = FPDF()
+            pdf.add_page()
+            if os.path.exists("logo.jpg"): pdf.image("logo.jpg", 10, 8, 33)
+            pdf.set_font("Arial", 'B', 16)
+            pdf.cell(0, 10, "Ticket de Venta - Abril Lenceria", ln=True, align='C')
+            pdf.ln(10)
+            pdf.set_font("Arial", size=11)
+            for item in st.session_state.carrito:
+                pdf.cell(0, 8, f"{item['desc']} | Cant: {item['cant']} | P.Unit: ${item['precio']:.2f} | Subtotal: ${item['precio']*item['cant']:.2f}", ln=True)
+            pdf.ln(5)
+            pdf.cell(0, 10, f"Total: ${total_final:.2f}", ln=True)
+            output_path = "ticket_venta.pdf"
+            pdf.output(output_path)
+            
+            conn = get_db_connection()
+            c = conn.cursor()
+            for item in st.session_state.carrito:
+                c.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", (item['cant'], item['codigo']))
+            c.execute("INSERT INTO ventas (fecha, total) VALUES (?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total_final))
+            conn.commit()
+            conn.close()
+            st.session_state.carrito = []
+            st.success("Venta registrada")
+            with open(output_path, "rb") as f: st.download_button("📥 Descargar Ticket PDF", f, output_path)
 
 with tab_catalogo:
     st.header("📦 Catálogo y Edición")
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
-    
-    # Editor de Datos
-    st.write("Edita directamente los valores y presiona el botón para guardar cambios:")
     edited_df = st.data_editor(df, num_rows="fixed", use_container_width=True)
-    
-    if st.button("💾 Guardar Cambios en el Catálogo"):
+    if st.button("💾 Guardar Cambios"):
         conn = get_db_connection()
-        try:
-            edited_df.to_sql('productos', conn, if_exists='replace', index=False)
-            st.success("¡Cambios guardados exitosamente!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error al guardar: {e}")
+        edited_df.to_sql('productos', conn, if_exists='replace', index=False)
         conn.close()
+        st.success("Guardado")
 
 with tab_excel:
     st.header("📊 Importar Excel")
     archivo_ex = st.file_uploader("Subir archivo", type=["xlsx", "csv"])
     if archivo_ex:
         df_import = pd.read_excel(archivo_ex) if archivo_ex.name.endswith('.xlsx') else pd.read_csv(archivo_ex)
-        st.dataframe(df_import.head(5), use_container_width=True)
-        
         cols = df_import.columns.tolist()
         c_cod = st.selectbox("Código", cols)
         c_desc = st.selectbox("Descripción", cols)
         c_marca = st.selectbox("Marca", cols)
         c_cat = st.selectbox("Categoría", cols)
         c_sub = st.selectbox("Sub-Categoría", cols)
-        c_costo_bulto = st.selectbox("Costo Bulto", cols)
-        c_unidades = st.selectbox("Unidades por Paquete", cols)
+        c_costo = st.selectbox("Costo", cols)
         c_margen = st.selectbox("Margen %", cols)
         
         if st.button("🚀 Importar"):
             conn = get_db_connection()
             cursor = conn.cursor()
             for _, row in df_import.iterrows():
-                try:
-                    costo_b = float(str(row[c_costo_bulto]).replace('$', '').replace(',', '.'))
-                    unid = float(str(row[c_unidades]).replace(',', '.'))
-                    margen = float(str(row[c_margen]).replace(',', '.'))
-                    costo_u = costo_b / unid
-                    venta = costo_u * (1 + margen/100)
-                    cursor.execute('''INSERT OR REPLACE INTO productos 
-                                     (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete) 
-                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                                 (str(row[c_cod]), str(row[c_desc]), str(row[c_marca]), str(row[c_cat]), str(row[c_sub]), 
-                                  costo_u, venta, int(unid), int(unid)))
-                except Exception as e:
-                    st.error(f"Error en fila {row[c_cod]}: {e}")
+                costo = float(row[c_costo])
+                venta = costo * (1 + float(row[c_margen])/100)
+                cursor.execute("INSERT OR REPLACE INTO productos VALUES (?,?,?,?,?,?,?,?,?)", 
+                               (str(row[c_cod]), str(row[c_desc]), str(row[c_marca]), str(row[c_cat]), str(row[c_sub]), costo, venta, 1, 1))
             conn.commit()
             conn.close()
-            st.success("¡Importación exitosa y precios calculados!")
+            st.success("Importación finalizada")
 
 with tab_informes:
     st.header("📈 Informes")
     conn = get_db_connection()
     df_v = pd.read_sql_query("SELECT * FROM ventas", conn)
-    df_p = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if not df_v.empty:
-            df_v['fecha'] = pd.to_datetime(df_v['fecha'])
-            resumen = df_v.groupby(df_v['fecha'].dt.date)['total'].sum().reset_index()
-            st.plotly_chart(px.line(resumen, x='fecha', y='total', title="Ventas diarias"), use_container_width=True)
-    with col2:
-        if not df_p.empty:
-            df_p['precio_costo'] = pd.to_numeric(df_p['precio_costo'], errors='coerce')
-            df_p['stock_actual'] = pd.to_numeric(df_p['stock_actual'], errors='coerce')
-            df_p['valor_inv'] = df_p['precio_costo'] * df_p['stock_actual']
-            st.plotly_chart(px.pie(df_p, values='valor_inv', names='marca', title="Inversión por Marca"), use_container_width=True)
+    if not df_v.empty:
+        df_v['fecha'] = pd.to_datetime(df_v['fecha'])
+        st.line_chart(df_v.groupby(df_v['fecha'].dt.date)['total'].sum())
 
 with tab_caja:
     st.header("💰 Cierre de Caja")
@@ -198,6 +168,4 @@ with tab_caja:
     df_v = pd.read_sql_query("SELECT * FROM ventas", conn)
     conn.close()
     fecha = st.date_input("Fecha", datetime.now().date())
-    ventas_dia = df_v[pd.to_datetime(df_v['fecha']).dt.date == fecha]
-    st.metric("Total del día", f"${ventas_dia['total'].sum():,.2f}")
-    st.dataframe(ventas_dia)
+    st.dataframe(df_v[pd.to_datetime(df_v['fecha']).dt.date == fecha])
