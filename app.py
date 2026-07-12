@@ -111,6 +111,7 @@ with tab_excel:
         col_codigo = col_a.selectbox("Columna de CÓDIGO", options=df_import.columns)
         col_desc = col_b.selectbox("Columna de DESCRIPCIÓN", options=df_import.columns)
         col_costo = col_c.selectbox("Columna de COSTO", options=df_import.columns)
+        nombre_prov = st.text_input("Nombre del Proveedor", placeholder="Ej: Floyd, Silvana...")
         
         margen = st.number_input("Margen de Ganancia (%)", min_value=0, value=70)
         
@@ -126,10 +127,10 @@ with tab_excel:
                     costo = float(row[col_costo])
                     venta = costo * (1 + (margen / 100))
                     
-                    cursor.execute('''INSERT OR REPLACE INTO productos 
-                                     (codigo, descripcion, precio_costo, precio_venta, stock_actual) 
-                                     VALUES (?, ?, ?, ?, ?)''', 
-                                  (cod, desc, costo, venta, 0)) 
+                  cursor.execute('''INSERT OR REPLACE INTO productos 
+                             (codigo, descripcion, proveedor, precio_costo, precio_venta, stock_actual) 
+                             VALUES (?, ?, ?, ?, ?, ?)''', 
+                          (cod, desc, nombre_prov, costo, venta, 0))
                     count += 1
                 except Exception as e:
                     continue 
