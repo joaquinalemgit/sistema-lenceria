@@ -19,7 +19,7 @@ with col_l2:
     st.subheader("Abril Lencería & Blanquería")
 
 def get_db_connection():
-    # Usamos v3 para crear la base de datos desde cero con todas las columnas nuevas
+    # Usamos v3, el sistema la actualizará automáticamente
     conn = sqlite3.connect('lenceria_master_v3.db')
     conn.row_factory = sqlite3.Row
     return conn
@@ -28,12 +28,19 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS productos 
-                      (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, categoria TEXT, 
+                      (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, categoria TEXT, subcategoria TEXT, 
                        precio_costo REAL, precio_venta REAL, stock_actual INTEGER)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS cierres_caja 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_ventas REAL)''')
+    
+    # Parche de seguridad: Agrega la columna 'subcategoria' automáticamente a bases de datos existentes
+    try:
+        cursor.execute("ALTER TABLE productos ADD COLUMN subcategoria TEXT")
+    except:
+        pass # Si la columna ya existe, ignora el error
+        
     conn.commit()
     conn.close()
 
@@ -159,13 +166,14 @@ with tab_catalogo:
 
     with col_cat1:
         st.subheader("Visualización y Búsqueda")
-        busqueda = st.text_input("🔍 Buscar por descripción, código, marca o categoría...", key="search_cat")
+        busqueda = st.text_input("🔍 Buscar por descripción, código, marca, categoría o sub-categoría...", key="search_cat")
         df_mostrar = df
         if busqueda:
             df_mostrar = df[df['descripcion'].str.contains(busqueda, case=False, na=False) | 
                             df['codigo'].str.contains(busqueda, case=False, na=False) | 
                             df['marca'].str.contains(busqueda, case=False, na=False) |
-                            df['categoria'].str.contains(busqueda, case=False, na=False)]
+                            df['categoria'].str.contains(busqueda, case=False, na=False) |
+                            df['subcategoria'].str.contains(busqueda, case=False, na=False)]
         st.dataframe(df_mostrar, use_container_width=True)
 
     with col_cat2:
@@ -216,16 +224,19 @@ with tab_excel:
 
             cols = df_import.columns.tolist()
             
+            # Fila 1 de configuraciones
             col1, col2, col3, col4 = st.columns(4)
             c_marca = col1.selectbox("🏢 Marca", cols, index=autodetectar_columna(cols, ['marca', 'proveedor', 'fabricante']))
             c_art = col2.selectbox("🏷️ Artículo (Código)", cols, index=autodetectar_columna(cols, ['articulo', 'art', 'codigo', 'cod', 'sku']))
             c_cat = col3.selectbox("📁 Categoría", cols, index=autodetectar_columna(cols, ['categoria', 'rubro', 'familia']))
-            c_desc = col4.selectbox("📝 Descripción", cols, index=autodetectar_columna(cols, ['descripcion', 'producto', 'detalle', 'nombre']))
+            c_subcat = col4.selectbox("📂 Sub-Categoría", cols, index=autodetectar_columna(cols, ['subcategoria', 'sub-categoria', 'sub', 'subrubro']))
             
+            # Fila 2 de configuraciones
             col5, col6, col7, col8 = st.columns(4)
-            c_precio = col5.selectbox("💲 Precio (Costo)", cols, index=autodetectar_columna(cols, ['precio', 'costo', 'valor']))
-            c_cant = col6.selectbox("📦 Cantidad (Stock)", cols, index=autodetectar_columna(cols, ['cantidad', 'cant', 'stock', 'unidades']))
-            c_margen = col7.selectbox("📈 Margen (%)", cols, index=autodetectar_columna(cols, ['margen', 'ganancia', '%']))
+            c_desc = col5.selectbox("📝 Descripción", cols, index=autodetectar_columna(cols, ['descripcion', 'producto', 'detalle', 'nombre']))
+            c_precio = col6.selectbox("💲 Precio (Costo)", cols, index=autodetectar_columna(cols, ['precio', 'costo', 'valor']))
+            c_cant = col7.selectbox("📦 Cantidad (Stock)", cols, index=autodetectar_columna(cols, ['cantidad', 'cant', 'stock', 'unidades']))
+            c_margen = col8.selectbox("📈 Margen (%)", cols, index=autodetectar_columna(cols, ['margen', 'ganancia', '%']))
             
             st.divider()
             usar_margen_global = st.checkbox("Ignorar columna de margen y usar un Margen Global")
@@ -243,6 +254,7 @@ with tab_excel:
                         marca = str(row[c_marca])
                         codigo = str(row[c_art])
                         categoria = str(row[c_cat])
+                        subcategoria = str(row[c_subcat])
                         desc = str(row[c_desc])
                         costo = float(row[c_precio])
                         stock = int(row[c_cant])
@@ -251,9 +263,9 @@ with tab_excel:
                         venta = costo * (1 + (m / 100))
                         
                         cursor.execute('''INSERT OR REPLACE INTO productos 
-                                         (codigo, descripcion, marca, categoria, precio_costo, precio_venta, stock_actual) 
-                                         VALUES (?, ?, ?, ?, ?, ?, ?)''', 
-                                      (codigo, desc, marca, categoria, costo, venta, stock))
+                                         (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual) 
+                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', 
+                                      (codigo, desc, marca, categoria, subcategoria, costo, venta, stock))
                         count += 1
                     except Exception as e:
                         continue
