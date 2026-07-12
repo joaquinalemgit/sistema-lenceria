@@ -75,7 +75,6 @@ with tab_pos:
                 cols = st.columns([3, 1, 1])
                 cols[0].write(f"{item['desc']} (x{item['cant']})")
                 cols[1].write(f"${item['precio']*item['cant']:.2f}")
-                # Botón para eliminar el ítem específico
                 if cols[2].button("❌", key=f"del_{item['id_item']}"):
                     st.session_state.carrito.pop(i)
                     st.rerun()
@@ -86,11 +85,9 @@ with tab_pos:
             total_final = total_base * (1 - desc/100)
             st.markdown(f"### Total: **${total_final:,.2f}**")
             
-            # Selector de método de pago restaurado
             metodo_pago = st.radio("Método de Pago", ("Efectivo", "Mercado Pago", "Transferencia", "Debito/Credito"), horizontal=True)
             
             if st.button("✅ Confirmar y Descargar Ticket"):
-                # Generación del PDF
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_font("Arial", 'B', 16)
@@ -103,12 +100,10 @@ with tab_pos:
                 pdf.cell(200, 10, txt=f"Total: ${total_final:.2f}", ln=True)
                 pdf.output("ticket.pdf")
                 
-                # Inserción en base de datos
                 conn = get_db_connection()
                 c = conn.cursor()
                 for item in st.session_state.carrito:
                     c.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", (item['cant'], item['codigo']))
-                # Registro con método de pago
                 c.execute("INSERT INTO ventas (fecha, metodo_pago, total) VALUES (?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), metodo_pago, total_final))
                 conn.commit()
                 conn.close()
@@ -120,14 +115,47 @@ with tab_pos:
             st.info("El carrito está vacío. Agrega productos para comenzar.")
 
 with tab_catalogo:
-    st.header("Catálogo")
+    st.header("📦 Catálogo de Productos")
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
-    busqueda = st.text_input("🔍 Buscar en catálogo...")
-    if busqueda:
-        df = df[df['descripcion'].str.contains(busqueda, case=False, na=False) | df['proveedor'].str.contains(busqueda, case=False, na=False)]
-    st.dataframe(df, use_container_width=True)
+
+    col_cat1, col_cat2 = st.columns([2, 1])
+
+    with col_cat1:
+        st.subheader("Visualización y Búsqueda")
+        busqueda = st.text_input("🔍 Buscar por descripción, código o proveedor...", key="search_cat")
+        df_mostrar = df
+        if busqueda:
+            df_mostrar = df[df['descripcion'].str.contains(busqueda, case=False, na=False) | 
+                            df['codigo'].str.contains(busqueda, case=False, na=False) | 
+                            df['proveedor'].str.contains(busqueda, case=False, na=False)]
+        st.dataframe(df_mostrar, use_container_width=True)
+
+    with col_cat2:
+        st.subheader("🔄 Actualizar Stock")
+        if not df.empty:
+            # Lista desplegable con los productos actuales para elegir fácilmente
+            lista_productos = df.apply(lambda r: f"{r['codigo']} - {r['descripcion']} (Actual: {r['stock_actual']})", axis=1).tolist()
+            prod_a_actualizar = st.selectbox("Selecciona un producto", options=["-- Seleccionar --"] + lista_productos)
+            
+            if prod_a_actualizar != "-- Seleccionar --":
+                cod_prod = prod_a_actualizar.split(" - ")[0]
+                stock_previo = int(df[df['codigo'] == cod_prod]['stock_actual'].values[0])
+                
+                # Input numérico que toma el stock actual como valor inicial
+                nuevo_stock = st.number_input("Nuevo Stock Disponible", min_value=0, value=stock_previo, step=1)
+                
+                if st.button("💾 Guardar Nuevo Stock"):
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE productos SET stock_actual = ? WHERE codigo = ?", (nuevo_stock, cod_prod))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"¡Hecho! El stock del código {cod_prod} ahora es {nuevo_stock}.")
+                    st.rerun()
+        else:
+            st.info("No hay productos registrados en el catálogo.")
 
 with tab_excel:
     st.header("📊 Importar Excel")
@@ -146,9 +174,12 @@ with tab_excel:
             c = conn.cursor()
             count = 0
             for _, row in df_import.iterrows():
-                venta = float(row[c_cost]) * (1 + margen/100)
-                c.execute("INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?)", (str(row[c_cod]), str(row[c_desc]), nombre_prov, float(row[c_cost]), venta, 0))
-                count += 1
+                try:
+                    venta = float(row[c_cost]) * (1 + margen/100)
+                    c.execute("INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?)", (str(row[c_cod]), str(row[c_desc]), nombre_prov, float(row[c_cost]), venta, 0))
+                    count += 1
+                except:
+                    continue
             conn.commit()
             conn.close()
             st.success(f"Procesados {count} productos.")
