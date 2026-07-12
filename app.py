@@ -181,6 +181,9 @@ with tab_informes:
             st.plotly_chart(px.line(resumen, x='fecha', y='total', title="Ventas diarias"), use_container_width=True)
     with col2:
         if not df_p.empty:
+            # Corrección del error: forzamos conversión a numérico para evitar errores de tipo
+            df_p['precio_costo'] = pd.to_numeric(df_p['precio_costo'], errors='coerce')
+            df_p['stock_actual'] = pd.to_numeric(df_p['stock_actual'], errors='coerce')
             df_p['valor_inv'] = df_p['precio_costo'] * df_p['stock_actual']
             st.plotly_chart(px.pie(df_p, values='valor_inv', names='marca', title="Inversión por Marca"), use_container_width=True)
 
