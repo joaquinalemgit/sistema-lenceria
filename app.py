@@ -19,17 +19,21 @@ with col_l2:
     st.subheader("Abril Lencería & Blanquería")
 
 def get_db_connection():
-    conn = sqlite3.connect('lenceria_master_v2.db') # 👈 AQUÍ ESTÁ EL CAMBIO
+    # Usamos v3 para crear la base de datos desde cero con todas las columnas nuevas
+    conn = sqlite3.connect('lenceria_master_v3.db')
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Se reemplazó proveedor por marca en la estructura de la base de datos
-    cursor.execute('''CREATE TABLE IF NOT EXISTS productos (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, precio_costo REAL, precio_venta REAL, stock_actual INTEGER)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS cierres_caja (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_ventas REAL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS productos 
+                      (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, categoria TEXT, 
+                       precio_costo REAL, precio_venta REAL, stock_actual INTEGER)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS cierres_caja 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_ventas REAL)''')
     conn.commit()
     conn.close()
 
@@ -43,18 +47,18 @@ with tab_pos:
     df_prods = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
 
-    if 'carrito' not in st.session_state: st.session_state.carrito = []
+    if 'carrito' not in st.session_state: 
+        st.session_state.carrito = []
 
     col1, col2 = st.columns([1, 1])
     with col1:
         st.subheader("Agregar Producto")
         
-        # 1. Selector de Marca (Antes Proveedor)
+        # 1. Selector de Marca
         lista_marcas = [m for m in df_prods['marca'].unique() if pd.notna(m) and m != ""]
         lista_marcas.sort()
         marca_sel = st.selectbox("1. Filtrar por Marca", options=["-- Todas --"] + lista_marcas)
         
-        # Filtrar DataFrame según la marca elegida
         if marca_sel != "-- Todas --":
             df_filtrado = df_prods[df_prods['marca'] == marca_sel]
         else:
@@ -71,7 +75,13 @@ with tab_pos:
                 cod = prod_sel.split(" - ")[0]
                 prod = df_prods[df_prods['codigo'] == cod].iloc[0]
                 if cant <= prod['stock_actual']:
-                    st.session_state.carrito.append({"id_item": datetime.now().timestamp(), "codigo": cod, "desc": prod['descripcion'], "precio": prod['precio_venta'], "cant": cant})
+                    st.session_state.carrito.append({
+                        "id_item": datetime.now().timestamp(), 
+                        "codigo": cod, 
+                        "desc": prod['descripcion'], 
+                        "precio": prod['precio_venta'], 
+                        "cant": cant
+                    })
                     st.rerun()
                 else:
                     st.error("Stock insuficiente")
@@ -95,8 +105,11 @@ with tab_pos:
             total_final = total_base * (1 - desc/100)
             st.markdown(f"### Total: **${total_final:,.2f}**")
             
-            metodo_pago = st.radio("Método de Pago", ("Efectivo", "Mercado Pago", "Transferencia Santander", "Transferencia BERSA", "Debito", "Credito"), horizontal=True)
+            metodo_pago = st.radio("Método de Pago", 
+                                   ("Efectivo", "Mercado Pago", "Transferencia Santander", "Transferencia BERSA", "Debito", "Credito"), 
+                                   horizontal=True)
             
+            # Calculadora de vuelto para Efectivo
             if metodo_pago == "Efectivo":
                 col_paga, col_vuelto = st.columns(2)
                 with col_paga:
@@ -125,7 +138,8 @@ with tab_pos:
                 c = conn.cursor()
                 for item in st.session_state.carrito:
                     c.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", (item['cant'], item['codigo']))
-                c.execute("INSERT INTO ventas (fecha, metodo_pago, total) VALUES (?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), metodo_pago, total_final))
+                c.execute("INSERT INTO ventas (fecha, metodo_pago, total) VALUES (?, ?, ?)", 
+                          (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), metodo_pago, total_final))
                 conn.commit()
                 conn.close()
                 st.session_state.carrito = []
@@ -145,16 +159,17 @@ with tab_catalogo:
 
     with col_cat1:
         st.subheader("Visualización y Búsqueda")
-        busqueda = st.text_input("🔍 Buscar por descripción, código o marca...", key="search_cat")
+        busqueda = st.text_input("🔍 Buscar por descripción, código, marca o categoría...", key="search_cat")
         df_mostrar = df
         if busqueda:
             df_mostrar = df[df['descripcion'].str.contains(busqueda, case=False, na=False) | 
                             df['codigo'].str.contains(busqueda, case=False, na=False) | 
-                            df['marca'].str.contains(busqueda, case=False, na=False)]
+                            df['marca'].str.contains(busqueda, case=False, na=False) |
+                            df['categoria'].str.contains(busqueda, case=False, na=False)]
         st.dataframe(df_mostrar, use_container_width=True)
 
     with col_cat2:
-        st.subheader("🔄 Actualizar Stock")
+        st.subheader("🔄 Actualizar Stock Manual")
         if not df.empty:
             lista_productos = df.apply(lambda r: f"{r['codigo']} - {r['descripcion']} (Actual: {r['stock_actual']})", axis=1).tolist()
             prod_a_actualizar = st.selectbox("Selecciona un producto", options=["-- Seleccionar --"] + lista_productos)
@@ -178,11 +193,9 @@ with tab_catalogo:
 
 with tab_excel:
     st.header("📊 Importar Excel y Parametrizar")
-    # Agregamos soporte para CSV además de Excel, por si lo necesitas
     archivo_ex = st.file_uploader("Subir archivo de productos", type=["xlsx", "xls", "csv"])
     
     if archivo_ex:
-        # 1. Leer el archivo y mostrar la vista previa
         try:
             if archivo_ex.name.endswith('.csv'):
                 df_import = pd.read_csv(archivo_ex)
@@ -190,38 +203,32 @@ with tab_excel:
                 df_import = pd.read_excel(archivo_ex)
                 
             st.write("👀 **Vista previa de los datos a importar:**")
-            st.dataframe(df_import.head(8), use_container_width=True)
+            st.dataframe(df_import.head(5), use_container_width=True)
             
             st.divider()
             st.subheader("⚙️ Parametrización de Columnas")
-            st.info("Selecciona qué columna de tu archivo corresponde a cada dato del sistema.")
             
-            # Función auxiliar para autodetectar la columna correcta en los selectbox
             def autodetectar_columna(opciones, posibles_nombres):
                 for i, col in enumerate(opciones):
                     if str(col).lower().strip() in posibles_nombres:
                         return i
-                return 0 # Si no encuentra coincidencia, selecciona la primera por defecto
+                return 0
 
             cols = df_import.columns.tolist()
             
-            # Fila 1 de parametrización
             col1, col2, col3, col4 = st.columns(4)
             c_marca = col1.selectbox("🏢 Marca", cols, index=autodetectar_columna(cols, ['marca', 'proveedor', 'fabricante']))
             c_art = col2.selectbox("🏷️ Artículo (Código)", cols, index=autodetectar_columna(cols, ['articulo', 'art', 'codigo', 'cod', 'sku']))
             c_cat = col3.selectbox("📁 Categoría", cols, index=autodetectar_columna(cols, ['categoria', 'rubro', 'familia']))
             c_desc = col4.selectbox("📝 Descripción", cols, index=autodetectar_columna(cols, ['descripcion', 'producto', 'detalle', 'nombre']))
             
-            # Fila 2 de parametrización
             col5, col6, col7, col8 = st.columns(4)
             c_precio = col5.selectbox("💲 Precio (Costo)", cols, index=autodetectar_columna(cols, ['precio', 'costo', 'valor']))
             c_cant = col6.selectbox("📦 Cantidad (Stock)", cols, index=autodetectar_columna(cols, ['cantidad', 'cant', 'stock', 'unidades']))
             c_margen = col7.selectbox("📈 Margen (%)", cols, index=autodetectar_columna(cols, ['margen', 'ganancia', '%']))
             
             st.divider()
-            
-            # Opción de salvavidas por si el Excel no tiene columna de margen
-            usar_margen_global = st.checkbox("Ignorar columna de margen y usar un Margen Global para todo el archivo")
+            usar_margen_global = st.checkbox("Ignorar columna de margen y usar un Margen Global")
             margen_global = 70.0
             if usar_margen_global:
                 margen_global = st.number_input("Margen Global a aplicar (%)", min_value=0.0, value=70.0)
@@ -230,17 +237,9 @@ with tab_excel:
                 conn = get_db_connection()
                 cursor = conn.cursor()
                 
-                # Actualización de seguridad: Agregar columna "categoria" a la BD si no existe aún
-                try:
-                    cursor.execute("ALTER TABLE productos ADD COLUMN categoria TEXT")
-                    conn.commit()
-                except:
-                    pass # Si la columna ya existe, simplemente ignora el error y continúa
-                    
                 count = 0
                 for _, row in df_import.iterrows():
                     try:
-                        # Extraer datos mapeados
                         marca = str(row[c_marca])
                         codigo = str(row[c_art])
                         categoria = str(row[c_cat])
@@ -248,22 +247,15 @@ with tab_excel:
                         costo = float(row[c_precio])
                         stock = int(row[c_cant])
                         
-                        # Calcular precio de venta según el margen
-                        if usar_margen_global:
-                            m = margen_global
-                        else:
-                            m = float(row[c_margen])
-                            
+                        m = margen_global if usar_margen_global else float(row[c_margen])
                         venta = costo * (1 + (m / 100))
                         
-                        # Insertar o actualizar el producto
                         cursor.execute('''INSERT OR REPLACE INTO productos 
-                                         (codigo, descripcion, marca, precio_costo, precio_venta, stock_actual, categoria) 
+                                         (codigo, descripcion, marca, categoria, precio_costo, precio_venta, stock_actual) 
                                          VALUES (?, ?, ?, ?, ?, ?, ?)''', 
-                                      (codigo, desc, marca, costo, venta, stock, categoria))
+                                      (codigo, desc, marca, categoria, costo, venta, stock))
                         count += 1
                     except Exception as e:
-                        # Si una fila tiene datos inválidos (ej. letras en el precio), la saltamos
                         continue
                         
                 conn.commit()
@@ -274,11 +266,46 @@ with tab_excel:
         except Exception as e:
             st.error(f"Error al leer el archivo: {e}")
     else:
-        st.info("Por favor, sube un archivo Excel (.xlsx) o CSV para comenzar la parametrización.")
+        st.info("Por favor, sube un archivo Excel o CSV para comenzar.")
 
 with tab_caja:
-    st.header("💰 Cierre de Caja")
+    st.header("💰 Cierre de Caja Diario")
     conn = get_db_connection()
     df_v = pd.read_sql_query("SELECT * FROM ventas", conn)
     conn.close()
-    st.write(df_v)
+
+    if not df_v.empty:
+        df_v['fecha_dt'] = pd.to_datetime(df_v['fecha'])
+        df_v['solo_fecha'] = df_v['fecha_dt'].dt.date
+        
+        col_filtro, _ = st.columns([1, 2])
+        with col_filtro:
+            fecha_seleccionada = st.date_input("📅 Selecciona la fecha de cierre:", datetime.now().date())
+        
+        ventas_dia = df_v[df_v['solo_fecha'] == fecha_seleccionada]
+        
+        if not ventas_dia.empty:
+            total_dia = ventas_dia['total'].sum()
+            
+            st.markdown(f"### 💵 Total de Ventas del Día: **${total_dia:,.2f}**")
+            st.divider()
+            
+            st.subheader("📊 Desglose por Método de Pago")
+            desglose = ventas_dia.groupby('metodo_pago')['total'].sum().reset_index()
+            
+            columnas = st.columns(len(desglose))
+            for i, row in enumerate(desglose.itertuples()):
+                columnas[i].metric(label=row.metodo_pago, value=f"${row.total:,.2f}")
+            
+            st.divider()
+            st.subheader("📝 Detalle de Operaciones")
+            st.dataframe(
+                ventas_dia[['fecha', 'metodo_pago', 'total']].rename(columns={'fecha':'Hora y Fecha', 'metodo_pago':'Método Usado', 'total':'Monto'}),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.warning(f"No hay ventas registradas para el día {fecha_seleccionada.strftime('%d/%m/%Y')}.")
+            
+    else:
+        st.info("Aún no tienes ventas registradas en el sistema. ¡Ve a la pestaña de ventas para hacer la primera!")
