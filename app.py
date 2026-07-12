@@ -120,10 +120,12 @@ with tab_catalogo:
     df = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
     
+    # Renombramos columnas para visualización amigable
     df_mostrar = df.rename(columns={
         'precio_costo': 'Costo Unit.',
         'precio_venta': 'Precio Venta',
-        'stock_actual': 'Stock'
+        'stock_actual': 'Stock',
+        'subcategoria': 'Sub-Cat.'
     })
     
     busqueda = st.text_input("🔍 Buscar...")
@@ -152,21 +154,26 @@ with tab_excel:
             cursor = conn.cursor()
             for _, row in df_import.iterrows():
                 try:
-                    costo_bulto = float(str(row[c_costo_bulto]).replace('$', '').replace(',', '.'))
-                    unidades = float(str(row[c_unidades]).replace(',', '.'))
+                    # Limpieza y cálculos
+                    costo_b = float(str(row[c_costo_bulto]).replace('$', '').replace(',', '.'))
+                    unid = float(str(row[c_unidades]).replace(',', '.'))
                     margen = float(str(row[c_margen]).replace(',', '.'))
-                    costo_u = costo_bulto / unidades
+                    
+                    costo_u = costo_b / unid
                     venta = costo_u * (1 + margen/100)
                     
-                    # ORDEN: (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
-                    cursor.execute('''INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                    # INSERCIÓN CON MAPEO CORREGIDO
+                    # Orden: (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
+                    cursor.execute('''INSERT OR REPLACE INTO productos 
+                                     (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete) 
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
                                  (str(row[c_cod]), str(row[c_desc]), str(row[c_marca]), str(row[c_cat]), str(row[c_sub]), 
-                                  costo_u, venta, int(unidades), int(unidades)))
+                                  costo_u, venta, int(unid), int(unid)))
                 except Exception as e:
                     st.error(f"Error en fila {row[c_cod]}: {e}")
             conn.commit()
             conn.close()
-            st.success("¡Importado correctamente!")
+            st.success("¡Importación exitosa y precios calculados!")
 
 with tab_informes:
     st.header("📈 Informes")
