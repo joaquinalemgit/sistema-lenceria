@@ -28,19 +28,12 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
+    # Definimos la estructura exacta para que no haya errores
     cursor.execute('''CREATE TABLE IF NOT EXISTS productos 
                       (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, categoria TEXT, subcategoria TEXT, 
                        precio_costo REAL, precio_venta REAL, stock_actual INTEGER, unidades_paquete INTEGER DEFAULT 1)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL, nota TEXT)''')
-    
-    # Parches para columnas nuevas
-    try: cursor.execute("ALTER TABLE productos ADD COLUMN subcategoria TEXT")
-    except: pass
-    try: cursor.execute("ALTER TABLE productos ADD COLUMN unidades_paquete INTEGER DEFAULT 1")
-    except: pass
-    try: cursor.execute("ALTER TABLE ventas ADD COLUMN nota TEXT")
-    except: pass
     
     conn.commit()
     conn.close()
@@ -127,42 +120,50 @@ with tab_catalogo:
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
+    
+    # Renombrar columnas para visualización clara
+    df_mostrar = df.rename(columns={
+        'precio_costo': 'Costo Unit.',
+        'precio_venta': 'Precio Venta',
+        'stock_actual': 'Stock'
+    })
+    
     busqueda = st.text_input("🔍 Buscar...")
-    if busqueda: df = df[df.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)]
-    st.dataframe(df, use_container_width=True)
+    if busqueda: df_mostrar = df_mostrar[df_mostrar.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)]
+    st.dataframe(df_mostrar, use_container_width=True)
 
 with tab_excel:
     st.header("📊 Importar Excel")
     archivo_ex = st.file_uploader("Subir", type=["xlsx", "csv"])
     if archivo_ex:
         df_import = pd.read_excel(archivo_ex) if archivo_ex.name.endswith('.xlsx') else pd.read_csv(archivo_ex)
-        
-        st.subheader("👀 Vista Previa del Archivo")
+        st.write("👀 **Vista previa (Verifica que las columnas coincidan):**")
         st.dataframe(df_import.head(5), use_container_width=True)
         
         cols = df_import.columns.tolist()
-        c_marca = st.selectbox("Marca", cols)
-        c_cod = st.selectbox("Código", cols)
-        c_cat = st.selectbox("Categoría", cols)
-        c_sub = st.selectbox("Sub-Categoría", cols)
-        c_desc = st.selectbox("Descripción", cols)
-        c_costo = st.selectbox("Costo Bulto", cols)
-        c_unidades = st.selectbox("Unidades por Paquete", cols)
-        c_margen = st.selectbox("Margen %", cols)
+        # Mapeo explícito
+        c_marca = st.selectbox("Columna MARCA", cols)
+        c_cod = st.selectbox("Columna CÓDIGO", cols)
+        c_cat = st.selectbox("Columna CATEGORÍA", cols)
+        c_sub = st.selectbox("Columna SUB-CATEGORÍA", cols)
+        c_desc = st.selectbox("Columna DESCRIPCIÓN", cols)
+        c_costo = st.selectbox("Columna COSTO BULTO (Total)", cols)
+        c_unidades = st.selectbox("Columna UNIDADES (por paquete)", cols)
+        c_margen = st.selectbox("Columna MARGEN %", cols)
         
         if st.button("🚀 Importar"):
             conn = get_db_connection()
             for _, row in df_import.iterrows():
                 try:
-                    # Limpieza robusta de datos
-                    raw_cost = str(row[c_costo]).replace('$', '').replace(',', '.')
-                    raw_unid = str(row[c_unidades]).replace(',', '.')
+                    # Limpieza
+                    costo_bulto = float(str(row[c_costo]).replace('$', '').replace(',', '.'))
+                    unidades = float(str(row[c_unidades]).replace(',', '.'))
                     
-                    costo_bulto = float(raw_cost)
-                    unidades = float(raw_unid)
                     costo_u = costo_bulto / unidades
                     venta = costo_u * (1 + float(row[c_margen])/100)
                     
+                    # Insertar con el orden correcto:
+                    # (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
                     conn.execute("INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
                                  (str(row[c_cod]), str(row[c_desc]), str(row[c_marca]), str(row[c_cat]), str(row[c_sub]), costo_u, venta, 0, unidades))
                 except Exception as e:
