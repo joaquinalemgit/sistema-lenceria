@@ -136,6 +136,10 @@ with tab_excel:
     archivo_ex = st.file_uploader("Subir", type=["xlsx", "csv"])
     if archivo_ex:
         df_import = pd.read_excel(archivo_ex) if archivo_ex.name.endswith('.xlsx') else pd.read_csv(archivo_ex)
+        
+        st.subheader("👀 Vista Previa del Archivo")
+        st.dataframe(df_import.head(5), use_container_width=True)
+        
         cols = df_import.columns.tolist()
         c_marca = st.selectbox("Marca", cols)
         c_cod = st.selectbox("Código", cols)
@@ -181,7 +185,6 @@ with tab_informes:
             st.plotly_chart(px.line(resumen, x='fecha', y='total', title="Ventas diarias"), use_container_width=True)
     with col2:
         if not df_p.empty:
-            # Corrección del error: forzamos conversión a numérico para evitar errores de tipo
             df_p['precio_costo'] = pd.to_numeric(df_p['precio_costo'], errors='coerce')
             df_p['stock_actual'] = pd.to_numeric(df_p['stock_actual'], errors='coerce')
             df_p['valor_inv'] = df_p['precio_costo'] * df_p['stock_actual']
