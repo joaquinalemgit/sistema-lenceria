@@ -85,9 +85,16 @@ with tab_pos:
                 st.rerun()
         
         total_base = sum(item['precio'] * item['cant'] for item in st.session_state.carrito)
-        desc = st.number_input("Descuento (%)", min_value=0, max_value=100, value=0)
-        total_final = total_base * (1 - desc/100)
+        
+        # Campo de Descuento/Recargo
+        ajuste = st.number_input("Descuento (-) o Recargo (+) (%)", value=0.0)
+        
+        total_final = total_base * (1 + ajuste/100)
         st.markdown(f"### Total Final: **${total_final:,.2f}**")
+        
+        # Nuevos métodos de pago
+        metodos = ["Efectivo", "Debito", "Credito", "Transferencia Santander", "Transferencia Bersa", "Mercado Pago", "APP YPF", "NaranjaX"]
+        metodo_seleccionado = st.selectbox("Método de Pago", metodos)
         
         if st.button("✅ Confirmar y Generar PDF"):
             pdf = FPDF()
@@ -100,7 +107,8 @@ with tab_pos:
             for item in st.session_state.carrito:
                 pdf.cell(0, 8, f"{item['desc']} | Cant: {item['cant']} | P.Unit: ${item['precio']:.2f} | Subtotal: ${item['precio']*item['cant']:.2f}", ln=True)
             pdf.ln(5)
-            pdf.cell(0, 10, f"Total: ${total_final:.2f}", ln=True)
+            pdf.cell(0, 10, f"Ajuste ({ajuste}%): ${total_base*(ajuste/100):.2f}", ln=True)
+            pdf.cell(0, 10, f"Total Final ({metodo_seleccionado}): ${total_final:.2f}", ln=True)
             output_path = "ticket_venta.pdf"
             pdf.output(output_path)
             
@@ -108,7 +116,7 @@ with tab_pos:
             c = conn.cursor()
             for item in st.session_state.carrito:
                 c.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", (item['cant'], item['codigo']))
-            c.execute("INSERT INTO ventas (fecha, total) VALUES (?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total_final))
+            c.execute("INSERT INTO ventas (fecha, total, metodo_pago) VALUES (?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total_final, metodo_seleccionado))
             conn.commit()
             conn.close()
             st.session_state.carrito = []
