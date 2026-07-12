@@ -33,22 +33,27 @@ def init_db():
                        precio_costo REAL, precio_venta REAL, stock_actual INTEGER, unidades_paquete INTEGER)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL, nota TEXT)''')
+    # Tabla para medios de pago
+    cursor.execute('''CREATE TABLE IF NOT EXISTS medios_pago 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, recargo_descuento REAL)''')
+    # Insertar por defecto si está vacía
+    cursor.execute("INSERT OR IGNORE INTO medios_pago (nombre, recargo_descuento) VALUES ('Efectivo', 0)")
     conn.commit()
     conn.close()
 
 init_db()
 
-tab_pos, tab_catalogo, tab_excel, tab_informes, tab_caja = st.tabs(["💳 Registrar Venta", "📦 Catálogo", "📊 Importar Excel", "📈 Informes", "💰 Cierre de Caja"])
+tab_pos, tab_catalogo, tab_pagos, tab_excel, tab_informes, tab_caja = st.tabs(["💳 Registrar Venta", "📦 Catálogo", "💳 Medios de Pago", "📊 Importar Excel", "📈 Informes", "💰 Cierre de Caja"])
 
 with tab_pos:
     st.header("Registrar Venta")
     conn = get_db_connection()
     df_prods = pd.read_sql_query("SELECT * FROM productos", conn)
+    df_pagos = pd.read_sql_query("SELECT * FROM medios_pago", conn)
     conn.close()
 
     if 'carrito' not in st.session_state: st.session_state.carrito = []
 
-    # Filtros de búsqueda avanzados
     col_fil1, col_fil2, col_fil3 = st.columns(3)
     with col_fil1:
         cat_sel = st.selectbox("Categoría", ["-- Todas --"] + sorted([c for c in df_prods['categoria'].unique() if pd.notna(c)]))
@@ -58,12 +63,10 @@ with tab_pos:
         df_f = df_prods
         if cat_sel != "-- Todas --": df_f = df_f[df_f['categoria'] == cat_sel]
         if subcat_sel != "-- Todas --": df_f = df_f[df_f['subcategoria'] == subcat_sel]
-        
         opciones = df_f.apply(lambda r: f"{r['codigo']} - {r['descripcion']} (${r['precio_venta']})", axis=1).tolist()
         prod_sel = st.selectbox("Seleccionar Producto", options=["-- Seleccionar --"] + opciones)
 
     cant = st.number_input("Cantidad", min_value=1, value=1)
-    
     if st.button("🛒 Agregar al Carrito"):
         if prod_sel != "-- Seleccionar --":
             cod = prod_sel.split(" - ")[0]
@@ -71,47 +74,18 @@ with tab_pos:
             if cant <= prod['stock_actual']:
                 st.session_state.carrito.append({"id_item": datetime.now().timestamp(), "codigo": cod, "desc": prod['descripcion'], "precio": prod['precio_venta'], "cant": cant})
                 st.rerun()
-            else: st.error("Stock insuficiente")
 
-    st.subheader("Carrito de Venta")
+    st.subheader("Carrito")
     if st.session_state.carrito:
-        for i, item in enumerate(st.session_state.carrito):
-            cols = st.columns([3, 1, 1, 1])
-            cols[0].write(f"{item['desc']}")
-            cols[1].write(f"Unit: ${item['precio']:.2f}")
-            cols[2].write(f"Cant: {item['cant']}")
-            if cols[3].button("❌", key=f"del_{item['id_item']}"):
-                st.session_state.carrito.pop(i)
-                st.rerun()
-        
         total_base = sum(item['precio'] * item['cant'] for item in st.session_state.carrito)
+        metodo_seleccionado = st.selectbox("Método de Pago", df_pagos['nombre'].tolist())
+        ajuste_pago = df_pagos[df_pagos['nombre'] == metodo_seleccionado]['recargo_descuento'].iloc[0]
         
-        # Campo de Descuento/Recargo
-        ajuste = st.number_input("Descuento (-) o Recargo (+) (%)", value=0.0)
-        
-        total_final = total_base * (1 + ajuste/100)
+        st.write(f"Aplicando ajuste por {metodo_seleccionado}: {ajuste_pago}%")
+        total_final = total_base * (1 + ajuste_pago/100)
         st.markdown(f"### Total Final: **${total_final:,.2f}**")
         
-        # Nuevos métodos de pago
-        metodos = ["Efectivo", "Debito", "Credito", "Transferencia Santander", "Transferencia Bersa", "Mercado Pago", "APP YPF", "NaranjaX"]
-        metodo_seleccionado = st.selectbox("Método de Pago", metodos)
-        
-        if st.button("✅ Confirmar y Generar PDF"):
-            pdf = FPDF()
-            pdf.add_page()
-            if os.path.exists("logo.jpg"): pdf.image("logo.jpg", 10, 8, 33)
-            pdf.set_font("Arial", 'B', 16)
-            pdf.cell(0, 10, "Ticket de Venta - Abril Lenceria", ln=True, align='C')
-            pdf.ln(10)
-            pdf.set_font("Arial", size=11)
-            for item in st.session_state.carrito:
-                pdf.cell(0, 8, f"{item['desc']} | Cant: {item['cant']} | P.Unit: ${item['precio']:.2f} | Subtotal: ${item['precio']*item['cant']:.2f}", ln=True)
-            pdf.ln(5)
-            pdf.cell(0, 10, f"Ajuste ({ajuste}%): ${total_base*(ajuste/100):.2f}", ln=True)
-            pdf.cell(0, 10, f"Total Final ({metodo_seleccionado}): ${total_final:.2f}", ln=True)
-            output_path = "ticket_venta.pdf"
-            pdf.output(output_path)
-            
+        if st.button("✅ Confirmar Venta"):
             conn = get_db_connection()
             c = conn.cursor()
             for item in st.session_state.carrito:
@@ -121,19 +95,30 @@ with tab_pos:
             conn.close()
             st.session_state.carrito = []
             st.success("Venta registrada")
-            with open(output_path, "rb") as f: st.download_button("📥 Descargar Ticket PDF", f, output_path)
+            st.rerun()
 
 with tab_catalogo:
     st.header("📦 Catálogo y Edición")
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
-    edited_df = st.data_editor(df, num_rows="fixed", use_container_width=True)
-    if st.button("💾 Guardar Cambios"):
+    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+    if st.button("💾 Guardar Cambios Catálogo"):
         conn = get_db_connection()
         edited_df.to_sql('productos', conn, if_exists='replace', index=False)
         conn.close()
-        st.success("Guardado")
+        st.success("Catálogo guardado")
+
+with tab_pagos:
+    st.header("💳 Administración de Medios de Pago")
+    conn = get_db_connection()
+    df_pagos = pd.read_sql_query("SELECT * FROM medios_pago", conn)
+    
+    edited_pagos = st.data_editor(df_pagos, num_rows="dynamic", use_container_width=True)
+    if st.button("💾 Guardar Medios de Pago"):
+        edited_pagos.to_sql('medios_pago', conn, if_exists='replace', index=False)
+        st.success("Medios de pago actualizados")
+    conn.close()
 
 with tab_excel:
     st.header("📊 Importar Excel")
