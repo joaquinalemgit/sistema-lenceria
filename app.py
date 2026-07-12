@@ -19,7 +19,7 @@ with col_l2:
     st.subheader("Abril Lencería & Blanquería")
 
 def get_db_connection():
-    conn = sqlite3.connect('lenceria_master.db')
+    conn = sqlite3.connect('lenceria_master_v2.db') # 👈 AQUÍ ESTÁ EL CAMBIO
     conn.row_factory = sqlite3.Row
     return conn
 
