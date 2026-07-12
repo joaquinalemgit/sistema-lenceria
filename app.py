@@ -19,7 +19,6 @@ with col_l2:
     st.subheader("Abril Lencería & Blanquería")
 
 def get_db_connection():
-    # Usamos v3, el sistema la actualizará automáticamente
     conn = sqlite3.connect('lenceria_master_v3.db')
     conn.row_factory = sqlite3.Row
     return conn
@@ -29,17 +28,23 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS productos 
                       (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, categoria TEXT, subcategoria TEXT, 
-                       precio_costo REAL, precio_venta REAL, stock_actual INTEGER)''')
+                       precio_costo REAL, precio_venta REAL, stock_actual INTEGER, unidades_paquete INTEGER DEFAULT 1)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS cierres_caja 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_ventas REAL)''')
     
-    # Parche de seguridad: Agrega la columna 'subcategoria' automáticamente a bases de datos existentes
+    # Parche de seguridad 1: Agrega 'subcategoria' si no existe
     try:
         cursor.execute("ALTER TABLE productos ADD COLUMN subcategoria TEXT")
     except:
-        pass # Si la columna ya existe, ignora el error
+        pass
+        
+    # Parche de seguridad 2: Agrega 'unidades_paquete' si no existe
+    try:
+        cursor.execute("ALTER TABLE productos ADD COLUMN unidades_paquete INTEGER DEFAULT 1")
+    except:
+        pass
         
     conn.commit()
     conn.close()
@@ -174,7 +179,9 @@ with tab_catalogo:
                             df['marca'].str.contains(busqueda, case=False, na=False) |
                             df['categoria'].str.contains(busqueda, case=False, na=False) |
                             df['subcategoria'].str.contains(busqueda, case=False, na=False)]
-        st.dataframe(df_mostrar, use_container_width=True)
+        
+        # Mostramos las columnas relevantes en el catálogo para verificar los costos unitarios
+        st.dataframe(df_mostrar[['codigo', 'descripcion', 'marca', 'precio_costo', 'precio_venta', 'stock_actual', 'unidades_paquete']], use_container_width=True)
 
     with col_cat2:
         st.subheader("🔄 Actualizar Stock Manual")
@@ -234,15 +241,29 @@ with tab_excel:
             # Fila 2 de configuraciones
             col5, col6, col7, col8 = st.columns(4)
             c_desc = col5.selectbox("📝 Descripción", cols, index=autodetectar_columna(cols, ['descripcion', 'producto', 'detalle', 'nombre']))
-            c_precio = col6.selectbox("💲 Precio (Costo)", cols, index=autodetectar_columna(cols, ['precio', 'costo', 'valor']))
-            c_cant = col7.selectbox("📦 Cantidad (Stock)", cols, index=autodetectar_columna(cols, ['cantidad', 'cant', 'stock', 'unidades']))
+            c_precio = col6.selectbox("💲 Precio (Costo del Bulto/Paquete)", cols, index=autodetectar_columna(cols, ['precio', 'costo', 'valor']))
+            c_cant = col7.selectbox("📦 Cantidad (Stock a ingresar)", cols, index=autodetectar_columna(cols, ['cantidad', 'cant', 'stock', 'unidades']))
             c_margen = col8.selectbox("📈 Margen (%)", cols, index=autodetectar_columna(cols, ['margen', 'ganancia', '%']))
             
+            # Fila 3: Unidades por paquete
+            col9, col10, col11, col12 = st.columns(4)
+            c_unidades = col9.selectbox("📦 Unid. por Paquete (Divide Costo)", cols, index=autodetectar_columna(cols, ['unidades', 'docena', 'pack', 'cant_paquete']))
+            
             st.divider()
-            usar_margen_global = st.checkbox("Ignorar columna de margen y usar un Margen Global")
-            margen_global = 70.0
-            if usar_margen_global:
-                margen_global = st.number_input("Margen Global a aplicar (%)", min_value=0.0, value=70.0)
+            
+            col_glob1, col_glob2 = st.columns(2)
+            with col_glob1:
+                usar_margen_global = st.checkbox("Ignorar columna de margen y usar un Margen Global")
+                margen_global = 70.0
+                if usar_margen_global:
+                    margen_global = st.number_input("Margen Global a aplicar (%)", min_value=0.0, value=70.0)
+
+            with col_glob2:
+                # Muy útil si la lista de Excel no tiene columna de unidades y son todos de docena o unidad
+                usar_unidades_global = st.checkbox("Ignorar columna de Unidades y usar un valor Global", value=True)
+                unidades_global = 1
+                if usar_unidades_global:
+                    unidades_global = st.number_input("Unidades x Paquete (Ej: 12 para docena, 1 para unitario)", min_value=1, value=1)
 
             if st.button("🚀 Procesar e Importar al Catálogo"):
                 conn = get_db_connection()
@@ -256,16 +277,29 @@ with tab_excel:
                         categoria = str(row[c_cat])
                         subcategoria = str(row[c_subcat])
                         desc = str(row[c_desc])
-                        costo = float(row[c_precio])
+                        costo_total = float(row[c_precio])
                         stock = int(row[c_cant])
                         
+                        # Determinar Margen
                         m = margen_global if usar_margen_global else float(row[c_margen])
-                        venta = costo * (1 + (m / 100))
+                        
+                        # Determinar Costo Unitario
+                        if usar_unidades_global:
+                            unidades = unidades_global
+                        else:
+                            try:
+                                unidades = int(row[c_unidades])
+                                if unidades <= 0: unidades = 1
+                            except:
+                                unidades = 1
+                                
+                        costo_unitario = costo_total / unidades
+                        venta = costo_unitario * (1 + (m / 100))
                         
                         cursor.execute('''INSERT OR REPLACE INTO productos 
-                                         (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual) 
-                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', 
-                                      (codigo, desc, marca, categoria, subcategoria, costo, venta, stock))
+                                         (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete) 
+                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                                      (codigo, desc, marca, categoria, subcategoria, costo_unitario, venta, stock, unidades))
                         count += 1
                     except Exception as e:
                         continue
