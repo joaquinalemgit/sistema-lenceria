@@ -177,35 +177,104 @@ with tab_catalogo:
             st.info("No hay productos registrados en el catálogo.")
 
 with tab_excel:
-    st.header("📊 Importar Excel")
-    archivo_ex = st.file_uploader("Subir archivo", type=["xlsx", "xls"])
+    st.header("📊 Importar Excel y Parametrizar")
+    # Agregamos soporte para CSV además de Excel, por si lo necesitas
+    archivo_ex = st.file_uploader("Subir archivo de productos", type=["xlsx", "xls", "csv"])
+    
     if archivo_ex:
-        df_import = pd.read_excel(archivo_ex)
-        st.dataframe(df_import.head())
-        col_c, col_d, col_p = st.columns(3)
-        c_cod = col_c.selectbox("Columna Código", df_import.columns)
-        c_desc = col_d.selectbox("Columna Descripción", df_import.columns)
-        c_cost = col_p.selectbox("Columna Costo", df_import.columns)
-        
-        # Reemplazado Nombre Proveedor por Nombre de la Marca
-        nombre_marca = st.text_input("Nombre de la Marca (Ej: Silvana, Floyd...)")
-        margen = st.number_input("Margen (%)", value=70)
-        
-        if st.button("🚀 Guardar Importación"):
-            conn = get_db_connection()
-            c = conn.cursor()
-            count = 0
-            for _, row in df_import.iterrows():
+        # 1. Leer el archivo y mostrar la vista previa
+        try:
+            if archivo_ex.name.endswith('.csv'):
+                df_import = pd.read_csv(archivo_ex)
+            else:
+                df_import = pd.read_excel(archivo_ex)
+                
+            st.write("👀 **Vista previa de los datos a importar:**")
+            st.dataframe(df_import.head(8), use_container_width=True)
+            
+            st.divider()
+            st.subheader("⚙️ Parametrización de Columnas")
+            st.info("Selecciona qué columna de tu archivo corresponde a cada dato del sistema.")
+            
+            # Función auxiliar para autodetectar la columna correcta en los selectbox
+            def autodetectar_columna(opciones, posibles_nombres):
+                for i, col in enumerate(opciones):
+                    if str(col).lower().strip() in posibles_nombres:
+                        return i
+                return 0 # Si no encuentra coincidencia, selecciona la primera por defecto
+
+            cols = df_import.columns.tolist()
+            
+            # Fila 1 de parametrización
+            col1, col2, col3, col4 = st.columns(4)
+            c_marca = col1.selectbox("🏢 Marca", cols, index=autodetectar_columna(cols, ['marca', 'proveedor', 'fabricante']))
+            c_art = col2.selectbox("🏷️ Artículo (Código)", cols, index=autodetectar_columna(cols, ['articulo', 'art', 'codigo', 'cod', 'sku']))
+            c_cat = col3.selectbox("📁 Categoría", cols, index=autodetectar_columna(cols, ['categoria', 'rubro', 'familia']))
+            c_desc = col4.selectbox("📝 Descripción", cols, index=autodetectar_columna(cols, ['descripcion', 'producto', 'detalle', 'nombre']))
+            
+            # Fila 2 de parametrización
+            col5, col6, col7, col8 = st.columns(4)
+            c_precio = col5.selectbox("💲 Precio (Costo)", cols, index=autodetectar_columna(cols, ['precio', 'costo', 'valor']))
+            c_cant = col6.selectbox("📦 Cantidad (Stock)", cols, index=autodetectar_columna(cols, ['cantidad', 'cant', 'stock', 'unidades']))
+            c_margen = col7.selectbox("📈 Margen (%)", cols, index=autodetectar_columna(cols, ['margen', 'ganancia', '%']))
+            
+            st.divider()
+            
+            # Opción de salvavidas por si el Excel no tiene columna de margen
+            usar_margen_global = st.checkbox("Ignorar columna de margen y usar un Margen Global para todo el archivo")
+            margen_global = 70.0
+            if usar_margen_global:
+                margen_global = st.number_input("Margen Global a aplicar (%)", min_value=0.0, value=70.0)
+
+            if st.button("🚀 Procesar e Importar al Catálogo"):
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                
+                # Actualización de seguridad: Agregar columna "categoria" a la BD si no existe aún
                 try:
-                    venta = float(row[c_cost]) * (1 + margen/100)
-                    c.execute("INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?)", (str(row[c_cod]), str(row[c_desc]), nombre_marca, float(row[c_cost]), venta, 0))
-                    count += 1
+                    cursor.execute("ALTER TABLE productos ADD COLUMN categoria TEXT")
+                    conn.commit()
                 except:
-                    continue
-            conn.commit()
-            conn.close()
-            st.success(f"Procesados {count} productos para la marca: {nombre_marca}.")
-            st.rerun()
+                    pass # Si la columna ya existe, simplemente ignora el error y continúa
+                    
+                count = 0
+                for _, row in df_import.iterrows():
+                    try:
+                        # Extraer datos mapeados
+                        marca = str(row[c_marca])
+                        codigo = str(row[c_art])
+                        categoria = str(row[c_cat])
+                        desc = str(row[c_desc])
+                        costo = float(row[c_precio])
+                        stock = int(row[c_cant])
+                        
+                        # Calcular precio de venta según el margen
+                        if usar_margen_global:
+                            m = margen_global
+                        else:
+                            m = float(row[c_margen])
+                            
+                        venta = costo * (1 + (m / 100))
+                        
+                        # Insertar o actualizar el producto
+                        cursor.execute('''INSERT OR REPLACE INTO productos 
+                                         (codigo, descripcion, marca, precio_costo, precio_venta, stock_actual, categoria) 
+                                         VALUES (?, ?, ?, ?, ?, ?, ?)''', 
+                                      (codigo, desc, marca, costo, venta, stock, categoria))
+                        count += 1
+                    except Exception as e:
+                        # Si una fila tiene datos inválidos (ej. letras en el precio), la saltamos
+                        continue
+                        
+                conn.commit()
+                conn.close()
+                st.success(f"✅ ¡Éxito! Se procesaron e importaron {count} productos correctamente.")
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"Error al leer el archivo: {e}")
+    else:
+        st.info("Por favor, sube un archivo Excel (.xlsx) o CSV para comenzar la parametrización.")
 
 with tab_caja:
     st.header("💰 Cierre de Caja")
