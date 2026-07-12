@@ -95,17 +95,32 @@ with tab_ia:
     if archivo: st.write("Procesando...")
 
 with tab_excel:
-    st.header("Importar Excel")
-    archivo_ex = st.file_uploader("Subir Excel", type="xlsx")
+    st.header("📊 Importar Excel con Preview")
+    archivo_ex = st.file_uploader("Subir archivo Excel", type=["xlsx", "xls"])
+    
     if archivo_ex:
+        # Leemos el archivo para el preview
         df_import = pd.read_excel(archivo_ex)
+        
+        st.write("Vista previa de los datos (primeras 5 filas):")
+        st.dataframe(df_import.head(5), use_container_width=True)
+        
+        st.subheader("Configuración de Mapeo")
+        # Columnas para el mapeo
         col_a, col_b, col_c = st.columns(3)
+        
         col_codigo = col_a.selectbox("Columna de CÓDIGO", options=df_import.columns)
         col_desc = col_b.selectbox("Columna de DESCRIPCIÓN", options=df_import.columns)
-        col_costo = col_c.selectbox("Columna de COSTO", options=df_import.columns)
-        margen = st.number_input("Margen (%)", value=70)
-        if st.button("Guardar Excel"):
-            st.success("Datos importados exitosamente")
+        col_costo = col_c.selectbox("Columna de COSTO (Precio)", options=df_import.columns)
+        
+        margen = st.number_input("Margen de Ganancia (%)", min_value=0, value=70)
+        
+        if st.button("🚀 Guardar Importación"):
+            # Aquí iría tu lógica de procesamiento para guardar en la base de datos
+            st.success(f"Datos importados exitosamente usando el mapeo seleccionado y un margen del {margen}%")
+            # st.dataframe(df_import) # Para verificar la lógica después
+    else:
+        st.info("Por favor, sube un archivo Excel para comenzar el mapeo.")
 
 with tab_caja:
     st.header("💰 Cierre de Caja y Reportes")
