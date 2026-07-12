@@ -15,7 +15,7 @@ with col_l1:
     if os.path.exists("logo.jpg"):
         st.image("logo.jpg", width=120)
     else:
-        st.write("Logo no encontrado") 
+        st.write("Logo no disponible") 
 with col_l2:
     st.title("Sistema de Gestión")
     st.subheader("Abril Lencería & Blanquería")
@@ -28,13 +28,12 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Estructura definitiva: (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
+    # ORDEN ESTRICTO: (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
     cursor.execute('''CREATE TABLE IF NOT EXISTS productos 
                       (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, categoria TEXT, subcategoria TEXT, 
                        precio_costo REAL, precio_venta REAL, stock_actual INTEGER, unidades_paquete INTEGER)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL, nota TEXT)''')
-    
     conn.commit()
     conn.close()
 
@@ -133,10 +132,9 @@ with tab_catalogo:
 
 with tab_excel:
     st.header("📊 Importar Excel")
-    archivo_ex = st.file_uploader("Subir", type=["xlsx", "csv"])
+    archivo_ex = st.file_uploader("Subir archivo", type=["xlsx", "csv"])
     if archivo_ex:
         df_import = pd.read_excel(archivo_ex) if archivo_ex.name.endswith('.xlsx') else pd.read_csv(archivo_ex)
-        st.write("👀 **Vista previa:**")
         st.dataframe(df_import.head(5), use_container_width=True)
         
         cols = df_import.columns.tolist()
@@ -151,20 +149,19 @@ with tab_excel:
         
         if st.button("🚀 Importar"):
             conn = get_db_connection()
+            cursor = conn.cursor()
             for _, row in df_import.iterrows():
                 try:
-                    # Cálculos con limpieza de formato
                     costo_bulto = float(str(row[c_costo_bulto]).replace('$', '').replace(',', '.'))
                     unidades = float(str(row[c_unidades]).replace(',', '.'))
                     margen = float(str(row[c_margen]).replace(',', '.'))
-                    
                     costo_u = costo_bulto / unidades
                     venta = costo_u * (1 + margen/100)
                     
-                    # CORRECCIÓN: Orden estricto según la tabla creada en init_db
-                    # (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
-                    conn.execute("INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                                 (str(row[c_cod]), str(row[c_desc]), str(row[c_marca]), str(row[c_cat]), str(row[c_sub]), costo_u, venta, 0, unidades))
+                    # ORDEN: (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
+                    cursor.execute('''INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                                 (str(row[c_cod]), str(row[c_desc]), str(row[c_marca]), str(row[c_cat]), str(row[c_sub]), 
+                                  costo_u, venta, int(unidades), int(unidades)))
                 except Exception as e:
                     st.error(f"Error en fila {row[c_cod]}: {e}")
             conn.commit()
