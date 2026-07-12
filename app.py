@@ -26,7 +26,8 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS productos (codigo TEXT PRIMARY KEY, descripcion TEXT, proveedor TEXT, precio_costo REAL, precio_venta REAL, stock_actual INTEGER)''')
+    # Se reemplazó proveedor por marca en la estructura de la base de datos
+    cursor.execute('''CREATE TABLE IF NOT EXISTS productos (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, precio_costo REAL, precio_venta REAL, stock_actual INTEGER)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS cierres_caja (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_ventas REAL)''')
     conn.commit()
@@ -48,14 +49,14 @@ with tab_pos:
     with col1:
         st.subheader("Agregar Producto")
         
-        # 1. Selector de Proveedor
-        lista_proveedores = [p for p in df_prods['proveedor'].unique() if pd.notna(p) and p != ""]
-        lista_proveedores.sort()
-        prov_sel = st.selectbox("1. Filtrar por Proveedor", options=["-- Todos --"] + lista_proveedores)
+        # 1. Selector de Marca (Antes Proveedor)
+        lista_marcas = [m for m in df_prods['marca'].unique() if pd.notna(m) and m != ""]
+        lista_marcas.sort()
+        marca_sel = st.selectbox("1. Filtrar por Marca", options=["-- Todas --"] + lista_marcas)
         
-        # Filtrar DataFrame según el proveedor elegido
-        if prov_sel != "-- Todos --":
-            df_filtrado = df_prods[df_prods['proveedor'] == prov_sel]
+        # Filtrar DataFrame según la marca elegida
+        if marca_sel != "-- Todas --":
+            df_filtrado = df_prods[df_prods['marca'] == marca_sel]
         else:
             df_filtrado = df_prods
             
@@ -94,10 +95,8 @@ with tab_pos:
             total_final = total_base * (1 - desc/100)
             st.markdown(f"### Total: **${total_final:,.2f}**")
             
-            # NUEVO: Opciones de métodos de pago actualizadas
             metodo_pago = st.radio("Método de Pago", ("Efectivo", "Mercado Pago", "Transferencia Santander", "Transferencia BERSA", "Debito", "Credito"), horizontal=True)
             
-            # Lógica de la calculadora de vuelto para Efectivo
             if metodo_pago == "Efectivo":
                 col_paga, col_vuelto = st.columns(2)
                 with col_paga:
@@ -146,12 +145,12 @@ with tab_catalogo:
 
     with col_cat1:
         st.subheader("Visualización y Búsqueda")
-        busqueda = st.text_input("🔍 Buscar por descripción, código o proveedor...", key="search_cat")
+        busqueda = st.text_input("🔍 Buscar por descripción, código o marca...", key="search_cat")
         df_mostrar = df
         if busqueda:
             df_mostrar = df[df['descripcion'].str.contains(busqueda, case=False, na=False) | 
                             df['codigo'].str.contains(busqueda, case=False, na=False) | 
-                            df['proveedor'].str.contains(busqueda, case=False, na=False)]
+                            df['marca'].str.contains(busqueda, case=False, na=False)]
         st.dataframe(df_mostrar, use_container_width=True)
 
     with col_cat2:
@@ -187,8 +186,11 @@ with tab_excel:
         c_cod = col_c.selectbox("Columna Código", df_import.columns)
         c_desc = col_d.selectbox("Columna Descripción", df_import.columns)
         c_cost = col_p.selectbox("Columna Costo", df_import.columns)
-        nombre_prov = st.text_input("Nombre Proveedor")
+        
+        # Reemplazado Nombre Proveedor por Nombre de la Marca
+        nombre_marca = st.text_input("Nombre de la Marca (Ej: Silvana, Floyd...)")
         margen = st.number_input("Margen (%)", value=70)
+        
         if st.button("🚀 Guardar Importación"):
             conn = get_db_connection()
             c = conn.cursor()
@@ -196,13 +198,13 @@ with tab_excel:
             for _, row in df_import.iterrows():
                 try:
                     venta = float(row[c_cost]) * (1 + margen/100)
-                    c.execute("INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?)", (str(row[c_cod]), str(row[c_desc]), nombre_prov, float(row[c_cost]), venta, 0))
+                    c.execute("INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?)", (str(row[c_cod]), str(row[c_desc]), nombre_marca, float(row[c_cost]), venta, 0))
                     count += 1
                 except:
                     continue
             conn.commit()
             conn.close()
-            st.success(f"Procesados {count} productos.")
+            st.success(f"Procesados {count} productos para la marca: {nombre_marca}.")
             st.rerun()
 
 with tab_caja:
