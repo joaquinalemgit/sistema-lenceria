@@ -94,9 +94,10 @@ with tab_pos:
             total_final = total_base * (1 - desc/100)
             st.markdown(f"### Total: **${total_final:,.2f}**")
             
-            metodo_pago = st.radio("Método de Pago", ("Efectivo", "Mercado Pago", "Transferencia", "Debito/Credito"), horizontal=True)
+            # NUEVO: Opciones de métodos de pago actualizadas
+            metodo_pago = st.radio("Método de Pago", ("Efectivo", "Mercado Pago", "Transferencia Santander", "Transferencia BERSA", "Debito", "Credito"), horizontal=True)
             
-            # NUEVO: Lógica de la calculadora de vuelto para Efectivo
+            # Lógica de la calculadora de vuelto para Efectivo
             if metodo_pago == "Efectivo":
                 col_paga, col_vuelto = st.columns(2)
                 with col_paga:
