@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import google.generativeai as genai
-from pypdf import PdfReader
 from datetime import datetime
 
 # Configuración inicial
@@ -87,6 +85,13 @@ with tab_catalogo:
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
+    
+    busqueda = st.text_input("🔍 Buscar por descripción, código o proveedor...")
+    if busqueda:
+        df = df[df['descripcion'].str.contains(busqueda, case=False, na=False) | 
+                df['codigo'].str.contains(busqueda, case=False, na=False) | 
+                df['proveedor'].str.contains(busqueda, case=False, na=False)]
+    
     st.dataframe(df, use_container_width=True)
 
 with tab_ia:
@@ -95,31 +100,27 @@ with tab_ia:
     if archivo: st.write("Procesando...")
 
 with tab_excel:
-    st.header("📊 Importar Excel con Preview")
+    st.header("📊 Importar Excel con Preview y Proveedor")
     archivo_ex = st.file_uploader("Subir archivo Excel", type=["xlsx", "xls"])
     
     if archivo_ex:
-        # Leemos el archivo para el preview
         df_import = pd.read_excel(archivo_ex)
-        
-        st.write("Vista previa de los datos (primeras 5 filas):")
+        st.write("Vista previa de los datos:")
         st.dataframe(df_import.head(5), use_container_width=True)
         
         st.subheader("Configuración de Mapeo")
         col_a, col_b, col_c = st.columns(3)
-        
         col_codigo = col_a.selectbox("Columna de CÓDIGO", options=df_import.columns)
         col_desc = col_b.selectbox("Columna de DESCRIPCIÓN", options=df_import.columns)
         col_costo = col_c.selectbox("Columna de COSTO", options=df_import.columns)
-        nombre_prov = st.text_input("Nombre del Proveedor", placeholder="Ej: Floyd, Silvana...")
         
+        nombre_prov = st.text_input("Nombre del Proveedor", placeholder="Ej: Floyd, Silvana...")
         margen = st.number_input("Margen de Ganancia (%)", min_value=0, value=70)
         
         if st.button("🚀 Guardar Importación"):
             conn = get_db_connection()
             cursor = conn.cursor()
             count = 0
-            
             for _, row in df_import.iterrows():
                 try:
                     cod = str(row[col_codigo])
@@ -127,24 +128,17 @@ with tab_excel:
                     costo = float(row[col_costo])
                     venta = costo * (1 + (margen / 100))
                     
-                  cursor.execute('''INSERT OR REPLACE INTO productos 
-                             (codigo, descripcion, proveedor, precio_costo, precio_venta, stock_actual) 
-                             VALUES (?, ?, ?, ?, ?, ?)''', 
-                          (cod, desc, nombre_prov, costo, venta, 0))
+                    cursor.execute('''INSERT OR REPLACE INTO productos 
+                                     (codigo, descripcion, proveedor, precio_costo, precio_venta, stock_actual) 
+                                     VALUES (?, ?, ?, ?, ?, ?)''', 
+                                  (cod, desc, nombre_prov, costo, venta, 0))
                     count += 1
                 except Exception as e:
-                    continue 
-            
+                    continue
             conn.commit()
             conn.close()
-            st.success(f"¡Éxito! Se han procesado {count} productos.")
-            
-            # ESTA ES LA LÍNEA MÁGICA:
-            # Obliga a Streamlit a recargar la página y refrescar los datos de todas las pestañas
-            st.rerun() 
-            
-    else:
-        st.info("Por favor, sube un archivo Excel para comenzar el mapeo.")
+            st.success(f"¡Éxito! Se procesaron {count} productos para el proveedor: {nombre_prov}")
+            st.rerun()
 
 with tab_caja:
     st.header("💰 Cierre de Caja y Reportes")
