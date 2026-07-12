@@ -47,13 +47,22 @@ with tab_pos:
     col1, col2 = st.columns([1, 1])
     with col1:
         st.subheader("Agregar Producto")
-        busq = st.text_input("Buscar producto por código o nombre...")
-        df_filtrado = df_prods
-        if busq:
-            df_filtrado = df_prods[df_prods['descripcion'].str.contains(busq, case=False, na=False) | df_prods['codigo'].str.contains(busq, case=False, na=False)]
         
+        # 1. Selector de Proveedor
+        lista_proveedores = [p for p in df_prods['proveedor'].unique() if pd.notna(p) and p != ""]
+        lista_proveedores.sort()
+        prov_sel = st.selectbox("1. Filtrar por Proveedor", options=["-- Todos --"] + lista_proveedores)
+        
+        # Filtrar DataFrame según el proveedor elegido
+        if prov_sel != "-- Todos --":
+            df_filtrado = df_prods[df_prods['proveedor'] == prov_sel]
+        else:
+            df_filtrado = df_prods
+            
+        # 2. Selector de Producto (filtrado)
         opciones = df_filtrado.apply(lambda r: f"{r['codigo']} - {r['descripcion']} (Stock: {r['stock_actual']})", axis=1).tolist()
-        prod_sel = st.selectbox("Seleccionar", options=["-- Seleccionar --"] + opciones)
+        prod_sel = st.selectbox("2. Seleccionar Producto", options=["-- Seleccionar --"] + opciones)
+        
         cant = st.number_input("Cantidad", min_value=1, value=1)
         
         if st.button("🛒 Agregar al Carrito"):
@@ -135,7 +144,6 @@ with tab_catalogo:
     with col_cat2:
         st.subheader("🔄 Actualizar Stock")
         if not df.empty:
-            # Lista desplegable con los productos actuales para elegir fácilmente
             lista_productos = df.apply(lambda r: f"{r['codigo']} - {r['descripcion']} (Actual: {r['stock_actual']})", axis=1).tolist()
             prod_a_actualizar = st.selectbox("Selecciona un producto", options=["-- Seleccionar --"] + lista_productos)
             
@@ -143,7 +151,6 @@ with tab_catalogo:
                 cod_prod = prod_a_actualizar.split(" - ")[0]
                 stock_previo = int(df[df['codigo'] == cod_prod]['stock_actual'].values[0])
                 
-                # Input numérico que toma el stock actual como valor inicial
                 nuevo_stock = st.number_input("Nuevo Stock Disponible", min_value=0, value=stock_previo, step=1)
                 
                 if st.button("💾 Guardar Nuevo Stock"):
