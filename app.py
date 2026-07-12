@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
+import os
 from datetime import datetime
 from fpdf import FPDF
 
@@ -121,6 +122,8 @@ with tab_pos:
                                    ("Efectivo", "Mercado Pago", "Transferencia Santander", "Transferencia BERSA", "Debito", "Credito"), 
                                    horizontal=True)
             
+            nota_ticket = st.text_input("📝 Nota para el ticket (Opcional)", placeholder="Ej: Cambio válido por 30 días con etiqueta...")
+            
             # Calculadora de vuelto para Efectivo
             if metodo_pago == "Efectivo":
                 col_paga, col_vuelto = st.columns(2)
@@ -136,14 +139,35 @@ with tab_pos:
             if st.button("✅ Confirmar y Descargar Ticket"):
                 pdf = FPDF()
                 pdf.add_page()
+                
+                # Insertar logo en el PDF si el archivo existe
+                if os.path.exists("logo.jpg"):
+                    try:
+                        # Centramos el logo arriba (X=85 es aprox el centro en A4)
+                        pdf.image("logo.jpg", x=85, y=5, w=40)
+                        pdf.ln(35) # Damos un margen hacia abajo luego del logo
+                    except Exception as e:
+                        pass
+                        
                 pdf.set_font("Arial", 'B', 16)
                 pdf.cell(200, 10, txt="Ticket de Venta - Abril Lenceria", ln=True, align='C')
                 pdf.set_font("Arial", size=12)
                 for item in st.session_state.carrito:
                     pdf.cell(200, 10, txt=f"{item['desc']} x{item['cant']} : ${item['precio']*item['cant']:.2f}", ln=True)
+                
+                pdf.ln(5)
                 pdf.cell(200, 10, txt=f"Descuento aplicado: {desc}%", ln=True)
                 pdf.cell(200, 10, txt=f"Metodo de pago: {metodo_pago}", ln=True)
+                
+                pdf.set_font("Arial", 'B', 14)
                 pdf.cell(200, 10, txt=f"Total: ${total_final:.2f}", ln=True)
+                
+                # Agregar la nota al final del ticket si fue completada
+                if nota_ticket:
+                    pdf.ln(10)
+                    pdf.set_font("Arial", 'I', 10) # 'I' es cursiva (Italic)
+                    pdf.multi_cell(0, 8, txt=f"Nota: {nota_ticket}", align='C')
+                    
                 pdf.output("ticket.pdf")
                 
                 conn = get_db_connection()
