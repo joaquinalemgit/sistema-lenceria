@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import os
 from datetime import datetime
 from fpdf import FPDF
+import plotly.express as px # Nueva librería para gráficos bonitos
 
 # Configuración inicial
 st.set_page_config(page_title="Gestión Lencería", layout="wide")
+
 
 # Configuración de logo
 col_l1, col_l2 = st.columns([1, 4])
@@ -52,7 +53,7 @@ def init_db():
 
 init_db()
 
-tab_pos, tab_catalogo, tab_excel, tab_caja = st.tabs(["💳 Registrar Venta", "📦 Catálogo", "📊 Importar Excel", "💰 Cierre de Caja"])
+tab_pos, tab_catalogo, tab_excel, tab_caja, tab_informes = st.tabs(["💳 Registrar Venta", "📦 Catálogo", "📊 Importar Excel", "💰 Cierre de Caja", "📈 Informes"])
 
 with tab_pos:
     st.header("Registrar Venta")
@@ -337,6 +338,36 @@ with tab_excel:
             st.error(f"Error al leer el archivo: {e}")
     else:
         st.info("Por favor, sube un archivo Excel o CSV para comenzar.")
+
+with tab_informes:
+    st.header("📈 Informes de Gestión")
+    conn = get_db_connection()
+    df_v = pd.read_sql_query("SELECT * FROM ventas", conn)
+    df_p = pd.read_sql_query("SELECT * FROM productos", conn)
+    conn.close()
+
+    col_i1, col_i2 = st.columns(2)
+
+    with col_i1:
+        st.subheader("Tendencia de Ventas")
+        if not df_v.empty:
+            df_v['fecha'] = pd.to_datetime(df_v['fecha'])
+            resumen_dia = df_v.groupby(df_v['fecha'].dt.date)['total'].sum().reset_index()
+            fig = px.line(resumen_dia, x='fecha', y='total', title="Ventas por día", markers=True)
+            st.plotly_chart(fig, use_container_width=True)
+
+    with col_i2:
+        st.subheader("Rentabilidad del Inventario")
+        if not df_p.empty:
+            df_p['val_costo'] = df_p['precio_costo'] * df_p['stock_actual']
+            df_p['val_venta'] = df_p['precio_venta'] * df_p['stock_actual']
+            st.metric("Valor Total Inventario (Costo)", f"${df_p['val_costo'].sum():,.2f}")
+            st.metric("Valor Total Inventario (Venta)", f"${df_p['val_venta'].sum():,.2f}")
+            
+            # Gráfico de marcas por valor
+            resumen_marca = df_p.groupby('marca')['val_venta'].sum().reset_index()
+            fig2 = px.pie(resumen_marca, values='val_venta', names='marca', title="Composición del Stock por Marca")
+            st.plotly_chart(fig2, use_container_width=True)
 
 with tab_caja:
     st.header("💰 Cierre de Caja Diario")
