@@ -96,6 +96,18 @@ with tab_pos:
             
             metodo_pago = st.radio("Método de Pago", ("Efectivo", "Mercado Pago", "Transferencia", "Debito/Credito"), horizontal=True)
             
+            # NUEVO: Lógica de la calculadora de vuelto para Efectivo
+            if metodo_pago == "Efectivo":
+                col_paga, col_vuelto = st.columns(2)
+                with col_paga:
+                    monto_abonado = st.number_input("Paga con ($):", min_value=0.0, value=float(total_final), step=100.0)
+                with col_vuelto:
+                    if monto_abonado >= total_final:
+                        vuelto = monto_abonado - total_final
+                        st.success(f"💵 Vuelto: **${vuelto:,.2f}**")
+                    else:
+                        st.error("Monto insuficiente")
+            
             if st.button("✅ Confirmar y Descargar Ticket"):
                 pdf = FPDF()
                 pdf.add_page()
