@@ -106,19 +106,39 @@ with tab_excel:
         st.dataframe(df_import.head(5), use_container_width=True)
         
         st.subheader("Configuración de Mapeo")
-        # Columnas para el mapeo
         col_a, col_b, col_c = st.columns(3)
         
         col_codigo = col_a.selectbox("Columna de CÓDIGO", options=df_import.columns)
         col_desc = col_b.selectbox("Columna de DESCRIPCIÓN", options=df_import.columns)
-        col_costo = col_c.selectbox("Columna de COSTO (Precio)", options=df_import.columns)
+        col_costo = col_c.selectbox("Columna de COSTO", options=df_import.columns)
         
         margen = st.number_input("Margen de Ganancia (%)", min_value=0, value=70)
         
         if st.button("🚀 Guardar Importación"):
-            # Aquí iría tu lógica de procesamiento para guardar en la base de datos
-            st.success(f"Datos importados exitosamente usando el mapeo seleccionado y un margen del {margen}%")
-            # st.dataframe(df_import) # Para verificar la lógica después
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            count = 0
+            
+            # Procesar filas
+            for _, row in df_import.iterrows():
+                try:
+                    cod = str(row[col_codigo])
+                    desc = str(row[col_desc])
+                    costo = float(row[col_costo])
+                    venta = costo * (1 + (margen / 100))
+                    
+                    # Insertar o actualizar si el código ya existe
+                    cursor.execute('''INSERT OR REPLACE INTO productos 
+                                     (codigo, descripcion, precio_costo, precio_venta, stock_actual) 
+                                     VALUES (?, ?, ?, ?, ?)''', 
+                                  (cod, desc, costo, venta, 0)) # Stock inicial en 0
+                    count += 1
+                except Exception as e:
+                    continue # Saltamos filas con errores graves
+            
+            conn.commit()
+            conn.close()
+            st.success(f"¡Éxito! Se han insertado/actualizado {count} filas en la base de datos correctamente.")
     else:
         st.info("Por favor, sube un archivo Excel para comenzar el mapeo.")
 
