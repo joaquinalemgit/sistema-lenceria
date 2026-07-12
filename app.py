@@ -119,7 +119,6 @@ with tab_excel:
             cursor = conn.cursor()
             count = 0
             
-            # Procesar filas
             for _, row in df_import.iterrows():
                 try:
                     cod = str(row[col_codigo])
@@ -127,18 +126,22 @@ with tab_excel:
                     costo = float(row[col_costo])
                     venta = costo * (1 + (margen / 100))
                     
-                    # Insertar o actualizar si el código ya existe
                     cursor.execute('''INSERT OR REPLACE INTO productos 
                                      (codigo, descripcion, precio_costo, precio_venta, stock_actual) 
                                      VALUES (?, ?, ?, ?, ?)''', 
-                                  (cod, desc, costo, venta, 0)) # Stock inicial en 0
+                                  (cod, desc, costo, venta, 0)) 
                     count += 1
                 except Exception as e:
-                    continue # Saltamos filas con errores graves
+                    continue 
             
             conn.commit()
             conn.close()
-            st.success(f"¡Éxito! Se han insertado/actualizado {count} filas en la base de datos correctamente.")
+            st.success(f"¡Éxito! Se han procesado {count} productos.")
+            
+            # ESTA ES LA LÍNEA MÁGICA:
+            # Obliga a Streamlit a recargar la página y refrescar los datos de todas las pestañas
+            st.rerun() 
+            
     else:
         st.info("Por favor, sube un archivo Excel para comenzar el mapeo.")
 
