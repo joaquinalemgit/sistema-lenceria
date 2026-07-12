@@ -34,15 +34,14 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL, nota TEXT)''')
     
-    # Parches de seguridad para columnas nuevas
-    cols = ['subcategoria', 'unidades_paquete', 'nota']
-    for col in cols:
-        try:
-            if col == 'nota': cursor.execute(f"ALTER TABLE ventas ADD COLUMN {col} TEXT")
-            elif col == 'subcategoria': cursor.execute(f"ALTER TABLE productos ADD COLUMN {col} TEXT")
-            elif col == 'unidades_paquete': cursor.execute(f"ALTER TABLE productos ADD COLUMN {col} INTEGER DEFAULT 1")
-        except: pass
-        
+    # Parches para columnas nuevas
+    try: cursor.execute("ALTER TABLE productos ADD COLUMN subcategoria TEXT")
+    except: pass
+    try: cursor.execute("ALTER TABLE productos ADD COLUMN unidades_paquete INTEGER DEFAULT 1")
+    except: pass
+    try: cursor.execute("ALTER TABLE ventas ADD COLUMN nota TEXT")
+    except: pass
+    
     conn.commit()
     conn.close()
 
@@ -150,14 +149,23 @@ with tab_excel:
         if st.button("🚀 Importar"):
             conn = get_db_connection()
             for _, row in df_import.iterrows():
-                u = float(row[c_unidades])
-                costo_u = float(row[c_costo]) / u
-                venta = costo_u * (1 + float(row[c_margen])/100)
-                conn.execute("INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                             (str(row[c_cod]), str(row[c_desc]), str(row[c_marca]), str(row[c_cat]), str(row[c_sub]), costo_u, venta, 0, u))
+                try:
+                    # Limpieza robusta de datos
+                    raw_cost = str(row[c_costo]).replace('$', '').replace(',', '.')
+                    raw_unid = str(row[c_unidades]).replace(',', '.')
+                    
+                    costo_bulto = float(raw_cost)
+                    unidades = float(raw_unid)
+                    costo_u = costo_bulto / unidades
+                    venta = costo_u * (1 + float(row[c_margen])/100)
+                    
+                    conn.execute("INSERT OR REPLACE INTO productos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                                 (str(row[c_cod]), str(row[c_desc]), str(row[c_marca]), str(row[c_cat]), str(row[c_sub]), costo_u, venta, 0, unidades))
+                except Exception as e:
+                    st.error(f"Error en fila {row[c_cod]}: {e}")
             conn.commit()
             conn.close()
-            st.success("¡Importado!")
+            st.success("¡Importado con éxito!")
 
 with tab_informes:
     st.header("📈 Informes")
