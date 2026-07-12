@@ -115,22 +115,24 @@ with tab_pos:
                 st.rerun()
 
 with tab_catalogo:
-    st.header("📦 Catálogo")
+    st.header("📦 Catálogo y Edición")
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
     
-    # Renombramos columnas para visualización amigable
-    df_mostrar = df.rename(columns={
-        'precio_costo': 'Costo Unit.',
-        'precio_venta': 'Precio Venta',
-        'stock_actual': 'Stock',
-        'subcategoria': 'Sub-Cat.'
-    })
+    # Editor de Datos
+    st.write("Edita directamente los valores y presiona el botón para guardar cambios:")
+    edited_df = st.data_editor(df, num_rows="fixed", use_container_width=True)
     
-    busqueda = st.text_input("🔍 Buscar...")
-    if busqueda: df_mostrar = df_mostrar[df_mostrar.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)]
-    st.dataframe(df_mostrar, use_container_width=True)
+    if st.button("💾 Guardar Cambios en el Catálogo"):
+        conn = get_db_connection()
+        try:
+            edited_df.to_sql('productos', conn, if_exists='replace', index=False)
+            st.success("¡Cambios guardados exitosamente!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error al guardar: {e}")
+        conn.close()
 
 with tab_excel:
     st.header("📊 Importar Excel")
@@ -154,16 +156,11 @@ with tab_excel:
             cursor = conn.cursor()
             for _, row in df_import.iterrows():
                 try:
-                    # Limpieza y cálculos
                     costo_b = float(str(row[c_costo_bulto]).replace('$', '').replace(',', '.'))
                     unid = float(str(row[c_unidades]).replace(',', '.'))
                     margen = float(str(row[c_margen]).replace(',', '.'))
-                    
                     costo_u = costo_b / unid
                     venta = costo_u * (1 + margen/100)
-                    
-                    # INSERCIÓN CON MAPEO CORREGIDO
-                    # Orden: (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
                     cursor.execute('''INSERT OR REPLACE INTO productos 
                                      (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete) 
                                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
