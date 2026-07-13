@@ -27,19 +27,24 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # ORDEN ESTRICTO: (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
+    # Tabla productos
     cursor.execute('''CREATE TABLE IF NOT EXISTS productos 
                       (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, categoria TEXT, subcategoria TEXT, 
                        precio_costo REAL, precio_venta REAL, stock_actual INTEGER, unidades_paquete INTEGER)''')
+    
+    # Tabla ventas
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL, nota TEXT)''')
+    
+    # --- CORRECCIÓN: Agregar turno si no existe ---
+    try:
+        cursor.execute("ALTER TABLE ventas ADD COLUMN turno TEXT")
+    except sqlite3.OperationalError:
+        pass # La columna ya existe, no hacemos nada
+        
     cursor.execute('''CREATE TABLE IF NOT EXISTS medios_pago 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, recargo_descuento REAL)''')
-    try:
-        conn.execute("ALTER TABLE ventas ADD COLUMN turno TEXT")
-        conn.commit()
-    except:
-        pass # La columna ya existe
+    conn.commit()
     conn.close()
 
 init_db()
