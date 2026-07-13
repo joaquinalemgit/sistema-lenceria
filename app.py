@@ -36,9 +36,11 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL, nota TEXT)''')
     
-    # --- CORRECCIÓN: Agregar turno si no existe ---
+    # --- ESTA ES LA CORRECCIÓN ---
+    # Intentamos agregar la columna turno si no existe
     try:
         cursor.execute("ALTER TABLE ventas ADD COLUMN turno TEXT")
+        conn.commit()
     except sqlite3.OperationalError:
         pass # La columna ya existe, no hacemos nada
         
