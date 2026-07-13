@@ -6,10 +6,8 @@ from fpdf import FPDF
 import plotly.express as px
 import os
 
-# Configuración inicial
 st.set_page_config(page_title="Gestión Lencería", layout="wide")
 
-# Configuración de logo
 col_l1, col_l2 = st.columns([1, 4])
 with col_l1:
     if os.path.exists("logo.jpg"):
@@ -33,11 +31,8 @@ def init_db():
                        precio_costo REAL, precio_venta REAL, stock_actual INTEGER, unidades_paquete INTEGER)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL, nota TEXT)''')
-    # Tabla para medios de pago
     cursor.execute('''CREATE TABLE IF NOT EXISTS medios_pago 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, recargo_descuento REAL)''')
-    # Insertar por defecto si está vacía
-    cursor.execute("INSERT OR IGNORE INTO medios_pago (nombre, recargo_descuento) VALUES ('Efectivo', 0)")
     conn.commit()
     conn.close()
 
@@ -74,28 +69,43 @@ with tab_pos:
             if cant <= prod['stock_actual']:
                 st.session_state.carrito.append({"id_item": datetime.now().timestamp(), "codigo": cod, "desc": prod['descripcion'], "precio": prod['precio_venta'], "cant": cant})
                 st.rerun()
+            else: st.error("Stock insuficiente")
 
     st.subheader("Carrito")
     if st.session_state.carrito:
-        total_base = sum(item['precio'] * item['cant'] for item in st.session_state.carrito)
-        metodo_seleccionado = st.selectbox("Método de Pago", df_pagos['nombre'].tolist())
-        ajuste_pago = df_pagos[df_pagos['nombre'] == metodo_seleccionado]['recargo_descuento'].iloc[0]
+        for i, item in enumerate(st.session_state.carrito):
+            cols = st.columns([3, 1, 1, 1])
+            cols[0].write(f"{item['desc']}")
+            cols[1].write(f"Unit: ${item['precio']:.2f}")
+            cols[2].write(f"Cant: {item['cant']}")
+            if cols[3].button("❌", key=f"del_{item['id_item']}"):
+                st.session_state.carrito.pop(i)
+                st.rerun()
         
-        st.write(f"Aplicando ajuste por {metodo_seleccionado}: {ajuste_pago}%")
+        total_base = sum(item['precio'] * item['cant'] for item in st.session_state.carrito)
+        ajuste_pago = st.number_input("Descuento (-) o Recargo (+) (%)", value=0.0)
+        
+        # Selección obligatoria de medio de pago
+        metodos_lista = ["-- Seleccione un método --"] + df_pagos['nombre'].tolist()
+        metodo_seleccionado = st.selectbox("Método de Pago", metodos_lista)
+        
         total_final = total_base * (1 + ajuste_pago/100)
         st.markdown(f"### Total Final: **${total_final:,.2f}**")
         
         if st.button("✅ Confirmar Venta"):
-            conn = get_db_connection()
-            c = conn.cursor()
-            for item in st.session_state.carrito:
-                c.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", (item['cant'], item['codigo']))
-            c.execute("INSERT INTO ventas (fecha, total, metodo_pago) VALUES (?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total_final, metodo_seleccionado))
-            conn.commit()
-            conn.close()
-            st.session_state.carrito = []
-            st.success("Venta registrada")
-            st.rerun()
+            if metodo_seleccionado == "-- Seleccione un método --":
+                st.error("⚠️ ¡Por favor, selecciona un método de pago antes de confirmar!")
+            else:
+                conn = get_db_connection()
+                c = conn.cursor()
+                for item in st.session_state.carrito:
+                    c.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", (item['cant'], item['codigo']))
+                c.execute("INSERT INTO ventas (fecha, total, metodo_pago) VALUES (?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total_final, metodo_seleccionado))
+                conn.commit()
+                conn.close()
+                st.session_state.carrito = []
+                st.success("Venta registrada exitosamente")
+                st.rerun()
 
 with tab_catalogo:
     st.header("📦 Catálogo y Edición")
@@ -112,17 +122,12 @@ with tab_catalogo:
 with tab_pagos:
     st.header("💳 Administración de Medios de Pago")
     conn = get_db_connection()
-    
-    # Botón para borrar todo
     if st.button("⚠️ Eliminar TODOS los medios de pago"):
-        c = conn.cursor()
-        c.execute("DELETE FROM medios_pago")
+        conn.execute("DELETE FROM medios_pago")
         conn.commit()
-        st.warning("Todos los medios de pago han sido eliminados.")
         st.rerun()
-
+        
     df_pagos = pd.read_sql_query("SELECT * FROM medios_pago", conn)
-    
     edited_pagos = st.data_editor(df_pagos, num_rows="dynamic", use_container_width=True)
     if st.button("💾 Guardar Medios de Pago"):
         edited_pagos.to_sql('medios_pago', conn, if_exists='replace', index=False)
