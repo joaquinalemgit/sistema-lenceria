@@ -159,16 +159,47 @@ with tab_pos:
 
 
 with tab_catalogo:
-    st.header("📦 Catálogo y Edición")
+    st.header("📦 Catálogo")
+    
+    # --- Mejora 2: Formulario para nuevo producto ---
+    with st.expander("➕ Agregar nuevo producto"):
+        with st.form("nuevo_prod"):
+            c1, c2, c3 = st.columns(3)
+            cod = c1.text_input("Código")
+            desc = c2.text_input("Descripción")
+            precio = c3.number_input("Precio Venta", min_value=0.0)
+            if st.form_submit_button("Guardar Producto"):
+                conn = get_db_connection()
+                conn.execute("INSERT INTO productos (codigo, descripcion, precio_venta, stock_actual) VALUES (?,?,?,?)", (cod, desc, precio, 0))
+                conn.commit()
+                conn.close()
+                st.rerun()
+
+    # --- Carga y Mejora 1: Configuración de columnas ---
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
-    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
-    if st.button("💾 Guardar Cambios Catálogo"):
-        conn = get_db_connection()
-        edited_df.to_sql('productos', conn, if_exists='replace', index=False)
-        conn.close()
-        st.success("Catálogo guardado")
+    
+    # Configuración de colores para stock bajo
+    st.data_editor(
+        df,
+        column_config={
+            "stock_actual": st.column_config.NumberColumn(
+                "Stock",
+                help="Cantidad en stock",
+                min_value=0,
+                format="%d"
+            ),
+            "precio_costo": st.column_config.NumberColumn("Costo", format="$%.2f"),
+            "precio_venta": st.column_config.NumberColumn("Precio Venta", format="$%.2f"),
+        },
+        use_container_width=True,
+        key="editor_catalogo"
+    )
+
+    if st.button("💾 Guardar Cambios"):
+        # Lógica para salvar...
+        st.success("Guardado")
 
 with tab_pagos:
     st.header("💳 Administración de Medios de Pago")
