@@ -112,6 +112,15 @@ with tab_catalogo:
 with tab_pagos:
     st.header("💳 Administración de Medios de Pago")
     conn = get_db_connection()
+    
+    # Botón para borrar todo
+    if st.button("⚠️ Eliminar TODOS los medios de pago"):
+        c = conn.cursor()
+        c.execute("DELETE FROM medios_pago")
+        conn.commit()
+        st.warning("Todos los medios de pago han sido eliminados.")
+        st.rerun()
+
     df_pagos = pd.read_sql_query("SELECT * FROM medios_pago", conn)
     
     edited_pagos = st.data_editor(df_pagos, num_rows="dynamic", use_container_width=True)
