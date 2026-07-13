@@ -106,23 +106,31 @@ with tab_pos:
                 @st.dialog("Confirmar Venta")
                 def confirm_dialog():
                     st.write(f"¿Estás seguro de registrar la venta por **${total_final:,.2f}** mediante {metodo_seleccionado}?")
-                    if st.button("Confirmar y generar Remito"):
+                    
+                    if st.button("Confirmar y procesar"):
+                        # 1. Generación de PDF
                         pdf = FPDF()
                         pdf.add_page()
-                        if os.path.exists("logo.jpg"): pdf.image("logo.jpg", 10, 8, 33)
+                        if os.path.exists("logo.jpg"): 
+                            pdf.image("logo.jpg", 10, 8, 33)
+                        
                         pdf.set_font("Arial", 'B', 16)
                         pdf.cell(0, 10, "Remito de Venta - Abril Lenceria", ln=True, align='C')
                         pdf.ln(15)
+                        
                         pdf.set_font("Arial", size=11)
                         for item in st.session_state.carrito:
                             pdf.cell(0, 8, f"{item['desc']} | Cant: {item['cant']} | P.Unit: ${item['precio']:.2f} | Subtotal: ${item['precio']*item['cant']:.2f}", ln=True)
+                        
                         pdf.ln(5)
                         pdf.cell(0, 8, f"Nota: {nota_venta}", ln=True)
                         pdf.cell(0, 8, f"Ajuste ({ajuste_pago}%): ${total_base*(ajuste_pago/100):.2f}", ln=True)
                         pdf.cell(0, 8, f"Total Final: ${total_final:.2f}", ln=True)
+                        
                         output_path = "remito_venta.pdf"
                         pdf.output(output_path)
                         
+                        # 2. Guardar en BD
                         conn = get_db_connection()
                         c = conn.cursor()
                         for item in st.session_state.carrito:
@@ -132,9 +140,23 @@ with tab_pos:
                         conn.close()
                         
                         st.session_state.carrito = []
-                        st.success("Venta procesada.")
-                        st.rerun()
+                        st.success("Venta procesada con éxito.")
+                        
+                        # 3. Mostrar botón de descarga del PDF generado
+                        with open(output_path, "rb") as f:
+                            st.download_button(
+                                label="📥 Descargar Remito en PDF",
+                                data=f,
+                                file_name=f"Remito_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                                mime="application/pdf"
+                            )
+                        
+                        if st.button("Cerrar"):
+                            st.rerun()
+
                 confirm_dialog()
+
+
 
 with tab_catalogo:
     st.header("📦 Catálogo y Edición")
