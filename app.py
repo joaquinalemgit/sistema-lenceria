@@ -83,29 +83,56 @@ with tab_pos:
                 st.rerun()
         
         total_base = sum(item['precio'] * item['cant'] for item in st.session_state.carrito)
-        ajuste_pago = st.number_input("Descuento (-) o Recargo (+) (%)", value=0.0)
         
-        # Selección obligatoria de medio de pago
+        # Selección de medio de pago
         metodos_lista = ["-- Seleccione un método --"] + df_pagos['nombre'].tolist()
         metodo_seleccionado = st.selectbox("Método de Pago", metodos_lista)
         
+        ajuste_pago = 0.0
+        if metodo_seleccionado != "-- Seleccione un método --":
+            ajuste_pago = df_pagos[df_pagos['nombre'] == metodo_seleccionado]['recargo_descuento'].iloc[0]
+        
+        st.info(f"Ajuste por {metodo_seleccionado}: {ajuste_pago}%")
         total_final = total_base * (1 + ajuste_pago/100)
         st.markdown(f"### Total Final: **${total_final:,.2f}**")
         
         if st.button("✅ Confirmar Venta"):
             if metodo_seleccionado == "-- Seleccione un método --":
-                st.error("⚠️ ¡Por favor, selecciona un método de pago antes de confirmar!")
+                st.error("⚠️ ¡Por favor, selecciona un método de pago!")
             else:
-                conn = get_db_connection()
-                c = conn.cursor()
-                for item in st.session_state.carrito:
-                    c.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", (item['cant'], item['codigo']))
-                c.execute("INSERT INTO ventas (fecha, total, metodo_pago) VALUES (?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total_final, metodo_seleccionado))
-                conn.commit()
-                conn.close()
-                st.session_state.carrito = []
-                st.success("Venta registrada exitosamente")
-                st.rerun()
+                # Ventana de confirmación usando dialog (disponible en versiones recientes de Streamlit)
+                @st.dialog("Confirmar Venta")
+                def confirm_dialog():
+                    st.write(f"¿Estás seguro de registrar la venta por **${total_final:,.2f}** mediante {metodo_seleccionado}?")
+                    if st.button("Confirmar y generar Remito"):
+                        # Generación de PDF
+                        pdf = FPDF()
+                        pdf.add_page()
+                        if os.path.exists("logo.jpg"): pdf.image("logo.jpg", 10, 8, 33)
+                        pdf.set_font("Arial", 'B', 16)
+                        pdf.cell(0, 10, "Remito de Venta - Abril Lenceria", ln=True, align='C')
+                        pdf.ln(10)
+                        pdf.set_font("Arial", size=11)
+                        for item in st.session_state.carrito:
+                            pdf.cell(0, 8, f"{item['desc']} | Cant: {item['cant']} | P.Unit: ${item['precio']:.2f} | Subtotal: ${item['precio']*item['cant']:.2f}", ln=True)
+                        pdf.cell(0, 10, f"Ajuste ({ajuste_pago}%): ${total_base*(ajuste_pago/100):.2f}", ln=True)
+                        pdf.cell(0, 10, f"Total Final: ${total_final:.2f}", ln=True)
+                        output_path = "remito_venta.pdf"
+                        pdf.output(output_path)
+                        
+                        # Registro BD
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        for item in st.session_state.carrito:
+                            c.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE codigo = ?", (item['cant'], item['codigo']))
+                        c.execute("INSERT INTO ventas (fecha, total, metodo_pago) VALUES (?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total_final, metodo_seleccionado))
+                        conn.commit()
+                        conn.close()
+                        
+                        st.session_state.carrito = []
+                        st.success("Venta procesada.")
+                        st.rerun()
+                confirm_dialog()
 
 with tab_catalogo:
     st.header("📦 Catálogo y Edición")
