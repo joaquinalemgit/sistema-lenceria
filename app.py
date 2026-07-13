@@ -27,6 +27,7 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
+    # ORDEN ESTRICTO: (codigo, descripcion, marca, categoria, subcategoria, precio_costo, precio_venta, stock_actual, unidades_paquete)
     cursor.execute('''CREATE TABLE IF NOT EXISTS productos 
                       (codigo TEXT PRIMARY KEY, descripcion TEXT, marca TEXT, categoria TEXT, subcategoria TEXT, 
                        precio_costo REAL, precio_venta REAL, stock_actual INTEGER, unidades_paquete INTEGER)''')
@@ -50,17 +51,23 @@ with tab_pos:
 
     if 'carrito' not in st.session_state: st.session_state.carrito = []
 
-    col_fil1, col_fil2, col_fil3 = st.columns(3)
-    with col_fil1:
+    # Búsqueda Avanzada: Categoría, Subcategoría y MARCA
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
         cat_sel = st.selectbox("Categoría", ["-- Todas --"] + sorted([c for c in df_prods['categoria'].unique() if pd.notna(c)]))
-    with col_fil2:
+    with col_f2:
         subcat_sel = st.selectbox("Subcategoría", ["-- Todas --"] + sorted([s for s in df_prods['subcategoria'].unique() if pd.notna(s)]))
-    with col_fil3:
-        df_f = df_prods
-        if cat_sel != "-- Todas --": df_f = df_f[df_f['categoria'] == cat_sel]
-        if subcat_sel != "-- Todas --": df_f = df_f[df_f['subcategoria'] == subcat_sel]
-        opciones = df_f.apply(lambda r: f"{r['codigo']} - {r['descripcion']} (${r['precio_venta']})", axis=1).tolist()
-        prod_sel = st.selectbox("Seleccionar Producto", options=["-- Seleccionar --"] + opciones)
+    with col_f3:
+        marca_sel = st.selectbox("Marca", ["-- Todas --"] + sorted([m for m in df_prods['marca'].unique() if pd.notna(m)]))
+
+    # Filtrado lógico
+    df_f = df_prods
+    if cat_sel != "-- Todas --": df_f = df_f[df_f['categoria'] == cat_sel]
+    if subcat_sel != "-- Todas --": df_f = df_f[df_f['subcategoria'] == subcat_sel]
+    if marca_sel != "-- Todas --": df_f = df_f[df_f['marca'] == marca_sel]
+    
+    opciones = df_f.apply(lambda r: f"{r['codigo']} - {r['descripcion']} (${r['precio_venta']})", axis=1).tolist()
+    prod_sel = st.selectbox("Seleccionar Producto", options=["-- Seleccionar --"] + opciones)
 
     cant = st.number_input("Cantidad", min_value=1, value=1)
     if st.button("🛒 Agregar al Carrito"):
@@ -112,6 +119,7 @@ with tab_pos:
                         for item in st.session_state.carrito:
                             pdf.cell(0, 8, f"{item['desc']} | Cant: {item['cant']} | P.Unit: ${item['precio']:.2f} | Subtotal: ${item['precio']*item['cant']:.2f}", ln=True)
                         pdf.cell(0, 8, f"Total Final: ${total_final:.2f}", ln=True)
+                        pdf.cell(0, 8, f"Notas: {nota_venta}", ln=True)
                         pdf.output("remito_venta.pdf")
                         
                         conn = get_db_connection()
@@ -128,7 +136,6 @@ with tab_pos:
 
 with tab_catalogo:
     st.header("📦 Catálogo y Edición")
-    
     with st.expander("➕ Agregar nuevo producto"):
         with st.form("nuevo_producto"):
             col1, col2, col3 = st.columns(3)
@@ -147,11 +154,12 @@ with tab_catalogo:
             
             if st.form_submit_button("Guardar Producto"):
                 conn = get_db_connection()
-                conn.execute("INSERT INTO productos VALUES (?,?,?,?,?,?,?,?,?)", (cod, desc, marca, cat, subcat, costo, venta, stock, unid))
-                conn.commit()
+                try:
+                    conn.execute("INSERT INTO productos VALUES (?,?,?,?,?,?,?,?,?)", (cod, desc, marca, cat, subcat, costo, venta, stock, unid))
+                    conn.commit()
+                    st.success("Producto agregado")
+                except: st.error("Error al guardar (¿código repetido?)")
                 conn.close()
-                st.success("Producto agregado")
-                st.rerun()
 
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM productos", conn)
