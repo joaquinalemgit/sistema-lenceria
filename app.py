@@ -8,6 +8,7 @@ import os
 
 st.set_page_config(page_title="Gestión Lencería", layout="wide")
 
+# Configuración de logo
 col_l1, col_l2 = st.columns([1, 4])
 with col_l1:
     if os.path.exists("logo.jpg"):
@@ -83,54 +84,36 @@ with tab_pos:
                 st.rerun()
         
         total_base = sum(item['precio'] * item['cant'] for item in st.session_state.carrito)
-        
-        # Selección de medio de pago
         metodos_lista = ["-- Seleccione un método --"] + df_pagos['nombre'].tolist()
         metodo_seleccionado = st.selectbox("Método de Pago", metodos_lista)
-        
-        # Campo de notas
-        nota_venta = st.text_area("Notas para el remito:")
+        nota_venta = st.text_area("Notas:")
         
         ajuste_pago = 0.0
         if metodo_seleccionado != "-- Seleccione un método --":
             ajuste_pago = df_pagos[df_pagos['nombre'] == metodo_seleccionado]['recargo_descuento'].iloc[0]
         
-        st.info(f"Ajuste por {metodo_seleccionado}: {ajuste_pago}%")
         total_final = total_base * (1 + ajuste_pago/100)
         st.markdown(f"### Total Final: **${total_final:,.2f}**")
         
         if st.button("✅ Confirmar Venta"):
             if metodo_seleccionado == "-- Seleccione un método --":
-                st.error("⚠️ ¡Por favor, selecciona un método de pago!")
+                st.error("⚠️ ¡Selecciona un método de pago!")
             else:
                 @st.dialog("Confirmar Venta")
                 def confirm_dialog():
-                    st.write(f"¿Estás seguro de registrar la venta por **${total_final:,.2f}** mediante {metodo_seleccionado}?")
-                    
-                    if st.button("Confirmar y procesar"):
-                        # 1. Generación de PDF
+                    if st.button("Confirmar y generar Remito"):
                         pdf = FPDF()
                         pdf.add_page()
-                        if os.path.exists("logo.jpg"): 
-                            pdf.image("logo.jpg", 10, 8, 33)
-                        
+                        if os.path.exists("logo.jpg"): pdf.image("logo.jpg", 10, 8, 33)
                         pdf.set_font("Arial", 'B', 16)
-                        pdf.cell(0, 10, "Remito de Venta - Abril Lenceria", ln=True, align='C')
+                        pdf.cell(0, 10, "Remito - Abril Lenceria", ln=True, align='C')
                         pdf.ln(15)
-                        
                         pdf.set_font("Arial", size=11)
                         for item in st.session_state.carrito:
                             pdf.cell(0, 8, f"{item['desc']} | Cant: {item['cant']} | P.Unit: ${item['precio']:.2f} | Subtotal: ${item['precio']*item['cant']:.2f}", ln=True)
-                        
-                        pdf.ln(5)
-                        pdf.cell(0, 8, f"Nota: {nota_venta}", ln=True)
-                        pdf.cell(0, 8, f"Ajuste ({ajuste_pago}%): ${total_base*(ajuste_pago/100):.2f}", ln=True)
                         pdf.cell(0, 8, f"Total Final: ${total_final:.2f}", ln=True)
+                        pdf.output("remito_venta.pdf")
                         
-                        output_path = "remito_venta.pdf"
-                        pdf.output(output_path)
-                        
-                        # 2. Guardar en BD
                         conn = get_db_connection()
                         c = conn.cursor()
                         for item in st.session_state.carrito:
@@ -138,68 +121,47 @@ with tab_pos:
                         c.execute("INSERT INTO ventas (fecha, total, metodo_pago, nota) VALUES (?, ?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total_final, metodo_seleccionado, nota_venta))
                         conn.commit()
                         conn.close()
-                        
                         st.session_state.carrito = []
-                        st.success("Venta procesada con éxito.")
-                        
-                        # 3. Mostrar botón de descarga del PDF generado
-                        with open(output_path, "rb") as f:
-                            st.download_button(
-                                label="📥 Descargar Remito en PDF",
-                                data=f,
-                                file_name=f"Remito_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                                mime="application/pdf"
-                            )
-                        
-                        if st.button("Cerrar"):
-                            st.rerun()
-
+                        st.success("Venta procesada.")
+                        st.rerun()
                 confirm_dialog()
 
-
-
 with tab_catalogo:
-    st.header("📦 Catálogo")
+    st.header("📦 Catálogo y Edición")
     
-    # --- Mejora 2: Formulario para nuevo producto ---
     with st.expander("➕ Agregar nuevo producto"):
-        with st.form("nuevo_prod"):
-            c1, c2, c3 = st.columns(3)
-            cod = c1.text_input("Código")
-            desc = c2.text_input("Descripción")
-            precio = c3.number_input("Precio Venta", min_value=0.0)
+        with st.form("nuevo_producto"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                cod = st.text_input("Código")
+                desc = st.text_input("Descripción")
+                marca = st.text_input("Marca")
+            with col2:
+                cat = st.text_input("Categoría")
+                subcat = st.text_input("Subcategoría")
+                unid = st.number_input("Unidades Paquete", value=1)
+            with col3:
+                costo = st.number_input("Costo", value=0.0)
+                venta = st.number_input("Venta", value=0.0)
+                stock = st.number_input("Stock", value=0)
+            
             if st.form_submit_button("Guardar Producto"):
                 conn = get_db_connection()
-                conn.execute("INSERT INTO productos (codigo, descripcion, precio_venta, stock_actual) VALUES (?,?,?,?)", (cod, desc, precio, 0))
+                conn.execute("INSERT INTO productos VALUES (?,?,?,?,?,?,?,?,?)", (cod, desc, marca, cat, subcat, costo, venta, stock, unid))
                 conn.commit()
                 conn.close()
+                st.success("Producto agregado")
                 st.rerun()
 
-    # --- Carga y Mejora 1: Configuración de columnas ---
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM productos", conn)
     conn.close()
-    
-    # Configuración de colores para stock bajo
-    st.data_editor(
-        df,
-        column_config={
-            "stock_actual": st.column_config.NumberColumn(
-                "Stock",
-                help="Cantidad en stock",
-                min_value=0,
-                format="%d"
-            ),
-            "precio_costo": st.column_config.NumberColumn("Costo", format="$%.2f"),
-            "precio_venta": st.column_config.NumberColumn("Precio Venta", format="$%.2f"),
-        },
-        use_container_width=True,
-        key="editor_catalogo"
-    )
-
-    if st.button("💾 Guardar Cambios"):
-        # Lógica para salvar...
-        st.success("Guardado")
+    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+    if st.button("💾 Guardar Cambios Catálogo"):
+        conn = get_db_connection()
+        edited_df.to_sql('productos', conn, if_exists='replace', index=False)
+        conn.close()
+        st.success("Catálogo guardado")
 
 with tab_pagos:
     st.header("💳 Administración de Medios de Pago")
@@ -208,7 +170,6 @@ with tab_pagos:
         conn.execute("DELETE FROM medios_pago")
         conn.commit()
         st.rerun()
-        
     df_pagos = pd.read_sql_query("SELECT * FROM medios_pago", conn)
     edited_pagos = st.data_editor(df_pagos, num_rows="dynamic", use_container_width=True)
     if st.button("💾 Guardar Medios de Pago"):
@@ -222,14 +183,7 @@ with tab_excel:
     if archivo_ex:
         df_import = pd.read_excel(archivo_ex) if archivo_ex.name.endswith('.xlsx') else pd.read_csv(archivo_ex)
         cols = df_import.columns.tolist()
-        c_cod = st.selectbox("Código", cols)
-        c_desc = st.selectbox("Descripción", cols)
-        c_marca = st.selectbox("Marca", cols)
-        c_cat = st.selectbox("Categoría", cols)
-        c_sub = st.selectbox("Sub-Categoría", cols)
-        c_costo = st.selectbox("Costo", cols)
-        c_margen = st.selectbox("Margen %", cols)
-        
+        c_cod, c_desc, c_marca, c_cat, c_sub, c_costo, c_margen = [st.selectbox(l, cols) for l in ["Código", "Descripción", "Marca", "Categoría", "Sub-Categoría", "Costo", "Margen %"]]
         if st.button("🚀 Importar"):
             conn = get_db_connection()
             cursor = conn.cursor()
