@@ -35,7 +35,11 @@ def init_db():
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, metodo_pago TEXT, total REAL, nota TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS medios_pago 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, recargo_descuento REAL)''')
-    conn.commit()
+    try:
+        conn.execute("ALTER TABLE ventas ADD COLUMN turno TEXT")
+        conn.commit()
+    except:
+        pass # La columna ya existe
     conn.close()
 
 init_db()
@@ -103,6 +107,12 @@ with tab_pos:
         st.markdown(f"### Total Final: **${total_final:,.2f}**")
         
         if st.button("✅ Confirmar Venta"):
+
+            # Dentro del bloque de registro de venta
+            turno_actual = st.radio("Turno", ["Mañana", "Tarde"])
+            # ... al ejecutar el INSERT en ventas ...
+            c.execute("INSERT INTO ventas (fecha, total, metodo_pago, nota, turno) VALUES (?, ?, ?, ?, ?)", 
+          (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total_final, metodo_seleccionado, nota_venta, turno_actual))
             if metodo_seleccionado == "-- Seleccione un método --":
                 st.error("⚠️ ¡Selecciona un método de pago!")
             else:
@@ -218,5 +228,36 @@ with tab_caja:
     conn = get_db_connection()
     df_v = pd.read_sql_query("SELECT * FROM ventas", conn)
     conn.close()
+    
     fecha = st.date_input("Fecha", datetime.now().date())
-    st.dataframe(df_v[pd.to_datetime(df_v['fecha']).dt.date == fecha])
+    df_dia = df_v[pd.to_datetime(df_v['fecha']).dt.date == fecha]
+    
+    if not df_dia.empty:
+        # Resumen por Turno
+        c1, c2 = st.columns(2)
+        for turno in ["Mañana", "Tarde"]:
+            resumen_turno = df_dia[df_dia['turno'] == turno]
+            with c1 if turno == "Mañana" else c2:
+                st.subheader(f"Turno {turno}")
+                st.metric("Total Venta", f"${resumen_turno['total'].sum():,.2f}")
+                
+                # Desglose por método de pago
+                if not resumen_turno.empty:
+                    desglose = resumen_turno.groupby('metodo_pago')['total'].sum()
+                    st.write("Desglose por método:")
+                    st.table(desglose)
+        
+        # Arqueo de efectivo
+        st.divider()
+        st.subheader("Arqueo de Caja (Efectivo)")
+        efectivo_sistema = df_dia[df_dia['metodo_pago'] == 'Efectivo']['total'].sum()
+        contado = st.number_input("Dinero contado en caja ($):", min_value=0.0, value=0.0)
+        diferencia = contado - efectivo_sistema
+        
+        if st.button("Verificar Cierre"):
+            if abs(diferencia) > 0:
+                st.warning(f"Diferencia: ${diferencia:,.2f}")
+            else:
+                st.success("¡Caja cerrada correctamente!")
+    else:
+        st.info("No hay ventas registradas en esta fecha.")
